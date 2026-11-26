@@ -38,6 +38,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
+import ru.rutubeclient.mobile.ui.components.PullToRefreshIndicator
+import ru.rutubeclient.mobile.ui.components.PullToRefreshState
+import ru.rutubeclient.mobile.ui.components.pullToRefresh
 import ru.rutubeclient.mobile.ui.components.VideoCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +52,11 @@ fun ChannelScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
+    val refreshState = remember { PullToRefreshState() }
+
+    // Pull-to-refresh is active when the ViewModel is loading but we already have videos
+    // (i.e. not the initial empty-state load).
+    val isRefreshing = state.isLoading && state.videos.isNotEmpty()
 
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -57,6 +65,14 @@ fun ChannelScreen(
         }
     }
     LaunchedEffect(shouldLoadMore) { if (shouldLoadMore) viewModel.loadMore() }
+
+    // When a pull-to-refresh completes (loading ends), reset the pull offset.
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) {
+            refreshState.completeRefresh()
+            refreshState.pullOffset.value = 0f
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopAppBar(
@@ -67,6 +83,15 @@ fun ChannelScreen(
                 }
             },
         )
+
+        PullToRefreshIndicator(
+            pullOffsetDp = if (isRefreshing || refreshState.pullOffset.value > 0f) {
+                refreshState.pullOffset.value
+            } else {
+                0f
+            },
+        )
+
         when {
             state.isLoading && state.videos.isEmpty() -> LoadingBox(Modifier.fillMaxSize())
             state.error != null && state.videos.isEmpty() -> ErrorBox(
@@ -80,7 +105,8 @@ fun ChannelScreen(
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .pullToRefresh({ gridState.canScrollBackward }, refreshState) { viewModel.refresh() },
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(

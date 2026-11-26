@@ -83,8 +83,12 @@ player with playback started successfully. No runtime crashes.
 
 ## Runtime notes
 - **Card clicks**: use `Modifier.clickable(role = Role.Button)` on Material3
-  cards; the experimental `PullToRefreshBox` was removed from the home screen
-  because it interfered with child click handling.
+  cards.
+- **Pull-to-refresh (mobile)**: custom `PullToRefresh` modifier in
+  `mobile/ui/components/PullToRefresh.kt` (nestedScroll-based, not the
+  experimental PullToRefreshBox which interfered with child clicks). The
+  indicator is touch-transparent so clicks pass through. Applied to Home and
+  Channel screens only.
 - **Fullscreen playback (mobile)**: the video screen has a fullscreen toggle
   overlay in the top-right corner of the player. The icon is shown only while
   the ExoPlayer controller is visible and hides together with it. Entering

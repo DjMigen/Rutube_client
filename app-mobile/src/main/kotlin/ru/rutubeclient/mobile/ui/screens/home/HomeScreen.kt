@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
+import ru.rutubeclient.mobile.ui.components.PullToRefreshIndicator
+import ru.rutubeclient.mobile.ui.components.PullToRefreshState
+import ru.rutubeclient.mobile.ui.components.pullToRefresh
 import ru.rutubeclient.mobile.ui.components.VideoCard
 
 /** Main feed with category chips and endless scrolling. */
@@ -43,6 +46,11 @@ fun HomeScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
+    val refreshState = remember { PullToRefreshState() }
+
+    // Pull-to-refresh is active when the ViewModel is loading but we already have videos
+    // (i.e. not the initial empty-state load).
+    val isRefreshing = state.isLoading && state.videos.isNotEmpty()
 
     // Trigger loading of the next page near the end of the list.
     val shouldLoadMore by remember {
@@ -53,6 +61,14 @@ fun HomeScreen(
     }
     LaunchedEffect(shouldLoadMore) {
         if (shouldLoadMore) viewModel.loadMore()
+    }
+
+    // When a pull-to-refresh completes (loading ends), reset the pull offset.
+    LaunchedEffect(state.isLoading) {
+        if (!state.isLoading) {
+            refreshState.completeRefresh()
+            refreshState.pullOffset.value = 0f
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -85,6 +101,14 @@ fun HomeScreen(
             }
         }
 
+        PullToRefreshIndicator(
+            pullOffsetDp = if (isRefreshing || refreshState.pullOffset.value > 0f) {
+                refreshState.pullOffset.value
+            } else {
+                0f
+            },
+        )
+
         when {
             state.isLoading && state.videos.isEmpty() ->
                 LoadingBox(Modifier.weight(1f))
@@ -102,7 +126,8 @@ fun HomeScreen(
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.weight(1f).fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxSize()
+                    .pullToRefresh({ gridState.canScrollBackward }, refreshState) { viewModel.refresh() },
             ) {
                 gridItemsIndexed(state.videos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                     VideoCard(video = video, onClick = { onVideoClick(video.id) })
