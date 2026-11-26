@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import ru.rutubeclient.core.model.Author
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.model.Page
+import ru.rutubeclient.core.model.TvShow
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoCategory
 import ru.rutubeclient.core.model.VideoDetails
@@ -104,6 +105,36 @@ internal data class CategoryListItemDto(
     @SerialName("name") val name: String = "",
 )
 
+@Serializable
+internal data class TvShowTypeDto(
+    @SerialName("id") val id: Int = 0,
+    @SerialName("name") val name: String = "",
+    @SerialName("title") val title: String = "",
+)
+
+@Serializable
+internal data class TvShowGenreDto(
+    @SerialName("id") val id: Int = 0,
+    @SerialName("name") val name: String = "",
+    @SerialName("link") val link: String? = null,
+)
+
+@Serializable
+internal data class TvShowDto(
+    @SerialName("id") val id: Int = 0,
+    @SerialName("name") val name: String = "",
+    @SerialName("type") val type: TvShowTypeDto? = null,
+    @SerialName("seasons_count") val seasonsCount: Int = 0,
+    @SerialName("subscribers_count") val subscribersCount: Long = 0,
+    @SerialName("poster_url") val posterUrl: String? = null,
+    @SerialName("vertical_poster_url") val verticalPosterUrl: String? = null,
+    @SerialName("picture") val picture: String? = null,
+    @SerialName("description") val description: String? = null,
+    @SerialName("genres") val genres: List<TvShowGenreDto> = emptyList(),
+    @SerialName("year_start") val yearStart: String? = null,
+    @SerialName("year_end") val yearEnd: String? = null,
+)
+
 internal fun AuthorDto.toModel() = Author(id = id, name = name, avatarUrl = avatarUrl)
 
 internal fun CategoryDto.toModel() = VideoCategory(id = id, name = name)
@@ -147,6 +178,19 @@ internal fun CommentDto.toModel() = Comment(
     authorAvatarUrl = user?.avatarUrl,
     likesCount = likesCount,
     repliesCount = repliesCount,
+)
+
+internal fun TvShowDto.toModel() = TvShow(
+    id = id,
+    name = name,
+    type = type?.name ?: "",
+    seasonsCount = seasonsCount,
+    subscribersCount = subscribersCount,
+    posterUrl = posterUrl ?: verticalPosterUrl ?: picture,
+    description = description,
+    genres = genres.map { it.name },
+    yearStart = yearStart,
+    yearEnd = yearEnd,
 )
 
 internal fun <T, R> PageDto<T>.toModel(mapper: (T) -> R) = Page(

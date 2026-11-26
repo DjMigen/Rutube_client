@@ -21,13 +21,13 @@ subscriptions, history, bookmarks and downloads are stored locally on the device
 
 ## Module structure
 ```
-core:model          Pure Kotlin data models (Video, VideoDetails, Comment, etc.)
+core:model          Pure Kotlin data models (Video, VideoDetails, Comment, TvShow, etc.)
 core:network        RuTube API client + DTOs, unit-tested against real responses
 core:database       Room database + LibraryRepository
 core:player         ExoPlayer factory, MediaSession background service,
                     offline-routing media source, quality controller
-app-mobile          Phone/tablet app (Compose, navigation, downloads, cast, PiP)
-app-tv              Android TV app (Compose for TV, D-pad player controls)
+app-mobile          Phone/tablet app (Compose, navigation, catalog, downloads, cast, PiP)
+app-tv              Android TV app (Compose for TV, catalog, D-pad player controls)
 ```
 
 ## Verified RuTube endpoints
@@ -44,6 +44,13 @@ verified against the live service and are used by the app:
 | Stream URL | `GET /api/play/options/{id}/?format=json` |
 | Comments | `GET /api/comments/video/{id}/?page=N` |
 | Channel videos | `GET /api/video/person/{authorId}/?page=N` |
+| TV shows / series catalog | `GET /api/metainfo/tv/?page=N` |
+| TV show details | `GET /api/metainfo/tv/{id}/` |
+| TV show episodes | `GET /api/metainfo/tv/{id}/video?page=N` |
+| Top movies | `GET /api/v2/video/recommendation/main/top_movie?limit=20&page=N` |
+| Top serials | `GET /api/v2/video/recommendation/main/top_serial?limit=20&page=N` |
+| Top cartoons | `GET /api/v2/video/recommendation/main/top_cartoon?limit=20&page=N` |
+| Top anime | `GET /api/v2/video/recommendation/main/top_anime?limit=20&page=N` |
 
 The stream URL is a signed HLS master-playlist (`video_balancer.m3u8`). It is
 short-lived and is re-resolved right before playback and again when the CDN
@@ -81,6 +88,13 @@ Launched on an Android 35 (Pixel 6) emulator: home feed loaded with real RuTube
 content, navigation between sections worked, and tapping a video opened the
 player with playback started successfully. No runtime crashes.
 
+Catalog feature smoke-tested on a Samsung Galaxy Tab A9 (SM-X115): the new
+"Каталог" tab loaded series/TV shows with posters, switching to "Фильмы",
+"Мультики" and "Аниме" loaded curated recommendation videos, tapping a series
+opened the detail screen with episodes, and tapping an episode started playback.
+Auto-fullscreen on landscape rotation and manual fullscreen button were also
+verified on the video screen.
+
 ## Runtime notes
 - **Card clicks**: use `Modifier.clickable(role = Role.Button)` on Material3
   cards.
@@ -92,8 +106,11 @@ player with playback started successfully. No runtime crashes.
 - **Fullscreen playback (mobile)**: the video screen has a fullscreen toggle
   overlay in the top-right corner of the player. The icon is shown only while
   the ExoPlayer controller is visible and hides together with it. Entering
-  fullscreen locks the activity to landscape, hides the system bars and fills
-  the screen. Back or the same button restores portrait.
+  fullscreen manually locks the activity to landscape, hides the system bars
+  and fills the screen. Back or the same button restores portrait. Rotating
+  the device to landscape automatically enters fullscreen; rotating back to
+  portrait automatically exits fullscreen unless fullscreen was enabled
+  manually.
 - **Background audio / PiP (mobile)**: `PlaybackService` owns the player and the
   media session; UI connects via `MediaController`. The video screen disconnects
   the controller on navigation back, but the service keeps playing when the app

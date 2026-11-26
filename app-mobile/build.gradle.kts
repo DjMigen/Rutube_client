@@ -20,8 +20,8 @@ android {
         applicationId = "ru.rutubeclient.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.3.0"
     }
 
     signingConfigs {
@@ -42,6 +42,10 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
         }
+    }
+
+    lint {
+        disable += "NullSafeMutableLiveData"
     }
 
     compileOptions {

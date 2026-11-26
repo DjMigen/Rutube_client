@@ -5,6 +5,7 @@ import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.util.Rational
 import android.view.View
 import androidx.activity.compose.BackHandler
@@ -64,6 +65,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,7 +138,23 @@ fun VideoScreen(
     var showDownloadDialog by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableStateOf(1f) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var isManualFullscreen by remember { mutableStateOf(false) }
     var controllerVisible by remember { mutableStateOf(true) }
+    val configuration = LocalConfiguration.current
+
+    // Auto-enter fullscreen on landscape rotation; auto-exit when returning to portrait
+    // unless the user explicitly enabled fullscreen manually.
+    LaunchedEffect(configuration.orientation) {
+        when (configuration.orientation) {
+            Configuration.ORIENTATION_LANDSCAPE -> if (!isFullscreen) {
+                isFullscreen = true
+                isManualFullscreen = false
+            }
+            Configuration.ORIENTATION_PORTRAIT -> if (isFullscreen && !isManualFullscreen) {
+                isFullscreen = false
+            }
+        }
+    }
 
     DisposableEffect(controller) {
         val c = controller ?: return@DisposableEffect onDispose {}
@@ -178,15 +196,18 @@ fun VideoScreen(
         }
     }
 
-    // Fullscreen: hide system bars and lock landscape; restore on exit / dispose.
+    // Fullscreen: hide system bars and (for manual fullscreen) lock landscape.
+    // Auto-fullscreen follows device rotation and does not lock orientation.
     val window = (context as? Activity)?.window
     val insetsController = remember(window) {
         window?.let { WindowCompat.getInsetsController(it, it.decorView) }
     }
-    DisposableEffect(isFullscreen) {
+    DisposableEffect(isFullscreen, isManualFullscreen) {
         val activity = context.findActivity()
         if (isFullscreen) {
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            if (isManualFullscreen) {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
             insetsController?.apply {
                 hide(WindowInsetsCompat.Type.systemBars())
                 systemBarsBehavior =
@@ -201,7 +222,10 @@ fun VideoScreen(
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    BackHandler(enabled = isFullscreen) { isFullscreen = false }
+    BackHandler(enabled = isFullscreen) {
+        isFullscreen = false
+        isManualFullscreen = false
+    }
 
     // Snackbar for action messages.
     LaunchedEffect(state.actionMessage) {
@@ -286,7 +310,10 @@ fun VideoScreen(
                         )
                         if (controllerVisible) {
                             IconButton(
-                                onClick = { isFullscreen = !isFullscreen },
+                                onClick = {
+                                    isFullscreen = !isFullscreen
+                                    isManualFullscreen = isFullscreen
+                                },
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(12.dp),

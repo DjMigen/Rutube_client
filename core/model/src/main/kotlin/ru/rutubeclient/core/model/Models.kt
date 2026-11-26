@@ -67,6 +67,25 @@ data class Page<T>(
 )
 
 /**
+ * A TV show / series entry from the structured metainfo catalog.
+ *
+ * @param type Backend type name: "series" for serials, "tvshow" for shows.
+ * @param posterUrl Best available poster (poster_url, vertical_poster_url or picture).
+ */
+data class TvShow(
+    val id: Int,
+    val name: String,
+    val type: String,
+    val seasonsCount: Int,
+    val subscribersCount: Long,
+    val posterUrl: String?,
+    val description: String?,
+    val genres: List<String>,
+    val yearStart: String?,
+    val yearEnd: String?,
+)
+
+/**
  * Resolved playback info. [hlsUrl] is a signed master-playlist URL that is
  * short-lived: it must be requested right before playback and re-requested
  * when it expires (HTTP 403 from the CDN).

@@ -139,6 +139,93 @@ class RuTubeApiTest {
     }
 
     @Test
+    fun `tv shows parse`() = runTest {
+        enqueueFixture("tv_shows.json")
+        val page = api.getTvShows(1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        val show = page.items.first { it.id > 0 }
+        assertTrue(show.name.isNotBlank())
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/metainfo/tv/?page=1")
+        )
+    }
+
+    @Test
+    fun `tv show details parse`() = runTest {
+        enqueueFixture("tv_show.json")
+        val show = api.getTvShow(8)
+        assertEquals(8, show.id)
+        assertTrue(show.name.isNotBlank())
+        assertTrue(show.seasonsCount >= 0)
+        assertNotNull(show.posterUrl)
+    }
+
+    @Test
+    fun `tv show episodes parse`() = runTest {
+        enqueueFixture("tv_show_videos.json")
+        val page = api.getTvShowVideos(8, 1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        val video = page.items.first()
+        assertTrue(video.id.isNotBlank())
+        assertTrue(video.title.isNotBlank())
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/metainfo/tv/8/video?page=1")
+        )
+    }
+
+    @Test
+    fun `top movies parse`() = runTest {
+        enqueueFixture("top_movie.json")
+        val page = api.getTopMovies(1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/v2/video/recommendation/main/top_movie")
+        )
+    }
+
+    @Test
+    fun `top serials parse`() = runTest {
+        enqueueFixture("top_serial.json")
+        val page = api.getTopSerials(1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/v2/video/recommendation/main/top_serial")
+        )
+    }
+
+    @Test
+    fun `top cartoons parse`() = runTest {
+        enqueueFixture("top_cartoon.json")
+        val page = api.getTopCartoons(1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/v2/video/recommendation/main/top_cartoon")
+        )
+    }
+
+    @Test
+    fun `top anime parse`() = runTest {
+        enqueueFixture("top_anime.json")
+        val page = api.getTopAnime(1)
+        assertTrue(page.items.isNotEmpty())
+        assertTrue(page.hasNext)
+        assertTrue(
+            server.takeRequest().path.orEmpty()
+                .startsWith("/api/v2/video/recommendation/main/top_anime")
+        )
+    }
+
+    @Test
     fun `http error throws RuTubeApiException`() = runTest {
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"detail":"not found"}"""))
         try {

@@ -34,16 +34,23 @@ import ru.rutubeclient.tv.ui.screens.TvSubscriptionsScreen
 import ru.rutubeclient.tv.ui.screens.TvSubscriptionsViewModel
 import ru.rutubeclient.tv.ui.screens.TvVideoScreen
 import ru.rutubeclient.tv.ui.screens.TvVideoViewModel
+import ru.rutubeclient.tv.ui.screens.catalog.TvCatalogScreen
+import ru.rutubeclient.tv.ui.screens.catalog.TvCatalogViewModel
+import ru.rutubeclient.tv.ui.screens.catalog.TvShowScreen
+import ru.rutubeclient.tv.ui.screens.catalog.TvShowViewModel
 
 object TvRoutes {
     const val HOME = "home"
     const val SEARCH = "search"
     const val SUBSCRIPTIONS = "subscriptions"
     const val LIBRARY = "library"
+    const val CATALOG = "catalog"
+    const val TV_SHOW = "tvshow/{tvId}"
     const val VIDEO = "video/{videoId}"
     const val CHANNEL = "channel/{authorId}?name={name}"
 
     fun video(id: String) = "video/$id"
+    fun tvShow(id: Int) = "tvshow/$id"
     fun channel(authorId: Long, name: String) =
         "channel/$authorId?name=${android.net.Uri.encode(name)}"
 }
@@ -66,6 +73,7 @@ private val topLevel = listOf(
     TopLevel(TvRoutes.SEARCH, "Поиск"),
     TopLevel(TvRoutes.SUBSCRIPTIONS, "Подписки"),
     TopLevel(TvRoutes.LIBRARY, "Библиотека"),
+    TopLevel(TvRoutes.CATALOG, "Каталог"),
 )
 
 @Composable
@@ -139,6 +147,34 @@ fun TvNavHost() {
                 })
                 TvLibraryScreen(
                     vm,
+                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
+                )
+            }
+            composable(TvRoutes.CATALOG) {
+                val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
+                val vm: TvCatalogViewModel = viewModel(factory = tvVmFactory {
+                    TvCatalogViewModel(container.api)
+                })
+                TvCatalogScreen(
+                    vm,
+                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
+                    onTvShowClick = { navController.navigate(TvRoutes.tvShow(it)) },
+                )
+            }
+            composable(
+                TvRoutes.TV_SHOW,
+                arguments = listOf(navArgument("tvId") { type = NavType.IntType }),
+            ) { entry ->
+                val tvId = entry.arguments?.getInt("tvId") ?: return@composable
+                val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
+                val vm: TvShowViewModel = viewModel(
+                    key = "tvshow-$tvId",
+                    factory = tvVmFactory {
+                        TvShowViewModel(tvId, container.api)
+                    },
+                )
+                TvShowScreen(
+                    viewModel = vm,
                     onVideoClick = { navController.navigate(TvRoutes.video(it)) },
                 )
             }

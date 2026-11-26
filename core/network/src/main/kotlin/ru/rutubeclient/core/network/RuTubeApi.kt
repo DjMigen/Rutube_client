@@ -8,6 +8,7 @@ import okhttp3.Request
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.model.Page
 import ru.rutubeclient.core.model.StreamInfo
+import ru.rutubeclient.core.model.TvShow
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoCategory
 import ru.rutubeclient.core.model.VideoDetails
@@ -49,6 +50,35 @@ class RuTubeApi(
             .map { VideoCategory(it.id, it.name) }
             .filter { it.name.isNotBlank() }
     }
+
+    /** Structured catalog of TV shows and series. */
+    suspend fun getTvShows(page: Int = 1): Page<TvShow> =
+        getPage("/api/metainfo/tv/?page=$page") { it: TvShowDto -> it.toModel() }
+
+    /** Details of one TV show / series. */
+    suspend fun getTvShow(id: Int): TvShow = withContext(Dispatchers.IO) {
+        json.decodeFromString<TvShowDto>(get("/api/metainfo/tv/$id/")).toModel()
+    }
+
+    /** Episodes (videos) of a TV show / series. */
+    suspend fun getTvShowVideos(tvId: Int, page: Int = 1): Page<Video> =
+        getPage("/api/metainfo/tv/$tvId/video?page=$page") { it: VideoDto -> it.toModel() }
+
+    /** Curated top movies from the "Кино и сериалы" feed. */
+    suspend fun getTopMovies(page: Int = 1): Page<Video> =
+        getPage("/api/v2/video/recommendation/main/top_movie?limit=20&page=$page") { it: VideoDto -> it.toModel() }
+
+    /** Curated top serials from the "Кино и сериалы" feed. */
+    suspend fun getTopSerials(page: Int = 1): Page<Video> =
+        getPage("/api/v2/video/recommendation/main/top_serial?show_hidden_videos=False&limit=20&page=$page") { it: VideoDto -> it.toModel() }
+
+    /** Curated top cartoons from the "Кино и сериалы" feed. */
+    suspend fun getTopCartoons(page: Int = 1): Page<Video> =
+        getPage("/api/v2/video/recommendation/main/top_cartoon?limit=20&page=$page") { it: VideoDto -> it.toModel() }
+
+    /** Curated top anime from the "Кино и сериалы" feed. */
+    suspend fun getTopAnime(page: Int = 1): Page<Video> =
+        getPage("/api/v2/video/recommendation/main/top_anime?limit=20&page=$page") { it: VideoDto -> it.toModel() }
 
     /** Videos of one category. */
     suspend fun getCategoryVideos(categoryId: Int, page: Int = 1): Page<Video> =

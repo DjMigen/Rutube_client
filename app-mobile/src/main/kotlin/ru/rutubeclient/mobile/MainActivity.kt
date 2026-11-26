@@ -7,6 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalMovies
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -30,6 +31,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ru.rutubeclient.mobile.di.vmFactory
 import ru.rutubeclient.mobile.player.CastManager
+import ru.rutubeclient.mobile.ui.screens.catalog.CatalogScreen
+import ru.rutubeclient.mobile.ui.screens.catalog.CatalogViewModel
+import ru.rutubeclient.mobile.ui.screens.catalog.TvShowScreen
+import ru.rutubeclient.mobile.ui.screens.catalog.TvShowViewModel
 import ru.rutubeclient.mobile.ui.screens.channel.ChannelScreen
 import ru.rutubeclient.mobile.ui.screens.channel.ChannelViewModel
 import ru.rutubeclient.mobile.ui.screens.home.HomeScreen
@@ -49,10 +54,13 @@ object Routes {
     const val SEARCH = "search"
     const val SUBSCRIPTIONS = "subscriptions"
     const val LIBRARY = "library"
+    const val CATALOG = "catalog"
+    const val TV_SHOW = "tvshow/{tvId}"
     const val VIDEO = "video/{videoId}"
     const val CHANNEL = "channel/{authorId}?name={name}"
 
     fun video(id: String) = "video/$id"
+    fun tvShow(id: Int) = "tvshow/$id"
     fun channel(authorId: Long, name: String) =
         "channel/$authorId?name=${android.net.Uri.encode(name)}"
 }
@@ -81,6 +89,7 @@ private val topLevelDestinations = listOf(
     TopLevel(Routes.SEARCH, "Поиск", Icons.Default.Search),
     TopLevel(Routes.SUBSCRIPTIONS, "Подписки", Icons.Default.Subscriptions),
     TopLevel(Routes.LIBRARY, "Библиотека", Icons.Default.VideoLibrary),
+    TopLevel(Routes.CATALOG, "Каталог", Icons.Default.LocalMovies),
 )
 
 @Composable
@@ -149,6 +158,35 @@ fun AppNavHost(castManager: CastManager) {
                     LibraryViewModel(container.repository, container.downloadsManager)
                 })
                 LibraryScreen(vm, onVideoClick = { navController.navigate(Routes.video(it)) })
+            }
+            composable(Routes.CATALOG) {
+                val container = App.container(androidx.compose.ui.platform.LocalContext.current)
+                val vm: CatalogViewModel = viewModel(factory = vmFactory {
+                    CatalogViewModel(container.api)
+                })
+                CatalogScreen(
+                    vm,
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                    onTvShowClick = { navController.navigate(Routes.tvShow(it)) },
+                )
+            }
+            composable(
+                Routes.TV_SHOW,
+                arguments = listOf(navArgument("tvId") { type = NavType.IntType }),
+            ) { entry ->
+                val tvId = entry.arguments?.getInt("tvId") ?: return@composable
+                val container = App.container(androidx.compose.ui.platform.LocalContext.current)
+                val vm: TvShowViewModel = viewModel(
+                    key = "tvshow-$tvId",
+                    factory = vmFactory {
+                        TvShowViewModel(tvId, container.api)
+                    },
+                )
+                TvShowScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                )
             }
             composable(
                 Routes.VIDEO,
