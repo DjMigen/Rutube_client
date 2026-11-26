@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
@@ -117,7 +118,7 @@ fun TvSearchScreen(
                 contentPadding = PaddingValues(bottom = 24.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(state.results, key = { it.id }) { video ->
+                gridItemsIndexed(state.results, key = { index, video -> "${video.id}_$index" }) { _, video ->
                     TvVideoCard(video = video, onClick = { onVideoClick(video.id) })
                 }
             }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -107,7 +108,7 @@ fun ChannelScreen(
                         }
                     }
                 }
-                items(state.videos, key = { it.id }) { video ->
+                gridItemsIndexed(state.videos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                     VideoCard(video = video, onClick = { onVideoClick(video.id) })
                 }
                 if (state.isLoadingMore) {

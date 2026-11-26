@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as rowItemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,7 +113,7 @@ fun TvVideoRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp),
         ) {
-            items(videos, key = { it.id }) { video ->
+            rowItemsIndexed(videos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                 TvVideoCard(video = video, onClick = { onVideoClick(video.id) })
             }
         }

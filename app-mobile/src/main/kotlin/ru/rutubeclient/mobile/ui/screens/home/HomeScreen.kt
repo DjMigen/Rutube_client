@@ -12,8 +12,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as rowItemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +75,7 @@ fun HomeScreen(
                         label = { Text("Все") },
                     )
                 }
-                items(state.categories, key = { it.id }) { category ->
+                rowItemsIndexed(state.categories, key = { index, category -> "${category.id}_$index" }) { _, category ->
                     FilterChip(
                         selected = state.selectedCategoryId == category.id,
                         onClick = { viewModel.selectCategory(category.id) },
@@ -102,7 +104,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.weight(1f).fillMaxSize(),
             ) {
-                items(state.videos, key = { it.id }) { video ->
+                gridItemsIndexed(state.videos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                     VideoCard(video = video, onClick = { onVideoClick(video.id) })
                 }
                 if (state.isLoadingMore) {

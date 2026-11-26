@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as columnItemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -106,7 +107,7 @@ private fun HistoryTab(
             TextButton(onClick = onClear) { Text("Очистить всё") }
         }
         LazyColumn {
-            items(items, key = { it.videoId }) { entry ->
+            columnItemsIndexed(items, key = { index, entry -> "${entry.videoId}_$index" }) { _, entry ->
                 val progress = if (entry.durationSec > 0) {
                     (entry.positionMs / 1000f / entry.durationSec).coerceIn(0f, 1f)
                 } else null
@@ -151,7 +152,7 @@ private fun BookmarksTab(
         return
     }
     LazyColumn {
-        items(items, key = { it.videoId }) { entry ->
+        columnItemsIndexed(items, key = { index, entry -> "${entry.videoId}_$index" }) { _, entry ->
             VideoListItem(
                 title = entry.title,
                 thumbnailUrl = entry.thumbnailUrl,
@@ -183,7 +184,7 @@ private fun DownloadsTab(
         return
     }
     LazyColumn {
-        items(items, key = { it.videoId }) { entry ->
+        columnItemsIndexed(items, key = { index, entry -> "${entry.videoId}_$index" }) { _, entry ->
             val subtitle = when (entry.state) {
                 DownloadEntity.STATE_COMPLETED ->
                     "Скачано • ${entry.qualityHeight}p • ${formatBytes(entry.bytesDownloaded)}"

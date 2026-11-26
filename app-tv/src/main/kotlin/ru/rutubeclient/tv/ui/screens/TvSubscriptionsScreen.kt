@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -109,7 +110,7 @@ fun TvSubscriptionsScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                items(subscriptions, key = { it.authorId }) { sub ->
+                gridItemsIndexed(subscriptions, key = { index, sub -> "${sub.authorId}_$index" }) { _, sub ->
                     ChannelCard(
                         name = sub.name,
                         avatarUrl = sub.avatarUrl,

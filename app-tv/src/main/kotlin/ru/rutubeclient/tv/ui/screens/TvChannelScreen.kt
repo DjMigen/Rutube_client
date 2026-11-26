@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -147,7 +148,7 @@ fun TvChannelScreen(
                 }
                 Spacer(Modifier.height(16.dp))
             }
-            items(state.videos, key = { it.id }) { video ->
+            gridItemsIndexed(state.videos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                 TvVideoCard(video = video, onClick = { onVideoClick(video.id) })
             }
         }

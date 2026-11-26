@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as rowItemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -425,7 +426,7 @@ fun VideoScreen(
                         Text("Ещё с канала", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(8.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(state.channelVideos, key = { it.id }) { video ->
+                            rowItemsIndexed(state.channelVideos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                                 VideoCard(
                                     video = video,
                                     onClick = { onVideoClick(video.id) },

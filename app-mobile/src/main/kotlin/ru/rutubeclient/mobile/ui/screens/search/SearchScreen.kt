@@ -15,9 +15,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed as columnItemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
@@ -149,7 +151,7 @@ private fun SearchResults(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = modifier.fillMaxSize(),
     ) {
-        items(state.results, key = { it.id }) { video ->
+        gridItemsIndexed(state.results, key = { index, video -> "${video.id}_$index" }) { _, video ->
             VideoCard(video = video, onClick = { onVideoClick(video.id) })
         }
         if (state.isLoading) {
@@ -194,7 +196,7 @@ private fun RecentQueries(
                 TextButton(onClick = onClear) { Text("Очистить") }
             }
             LazyColumn {
-                items(queries, key = { it }) { query ->
+                columnItemsIndexed(queries, key = { index, query -> "${query}_$index" }) { _, query ->
                     Row(
                         Modifier
                             .fillMaxWidth()
