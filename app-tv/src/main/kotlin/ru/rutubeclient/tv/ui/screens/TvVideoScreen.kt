@@ -3,6 +3,9 @@ package ru.rutubeclient.tv.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +34,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.material3.Icon
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,6 +78,7 @@ class TvVideoViewModel(
         val startPositionMs: Long = 0L,
         val isLoading: Boolean = true,
         val error: String? = null,
+        val isBookmarked: Boolean = false,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -84,6 +89,7 @@ class TvVideoViewModel(
 
     init {
         load()
+        observeBookmarks()
     }
 
     fun load() {
@@ -130,6 +136,25 @@ class TvVideoViewModel(
         if (positionMs <= 0L) return
         ioScope.launch { repository.savePosition(details, positionMs) }
     }
+
+    fun toggleBookmark() {
+        val details = _state.value.details ?: return
+        viewModelScope.launch {
+            if (_state.value.isBookmarked) {
+                repository.removeBookmark(videoId)
+            } else {
+                repository.addBookmark(details)
+            }
+        }
+    }
+
+    private fun observeBookmarks() {
+        viewModelScope.launch {
+            repository.isBookmarked(videoId).collect { bookmarked ->
+                _state.update { it.copy(isBookmarked = bookmarked) }
+            }
+        }
+    }
 }
 
 /** Full-screen TV player with D-pad controls: OK = play/pause, ←/→ = ±10s, ↑ = controls. */
@@ -152,7 +177,8 @@ fun TvVideoScreen(
     var showQualityPicker by remember { mutableStateOf(false) }
     var selectedQualityHeight by remember { mutableIntStateOf(0) }
 
-    val focusRequester = remember { FocusRequester() }
+    val boxFocusRequester = remember { FocusRequester() }
+    val pauseFocusRequester = remember { FocusRequester() }
 
     // Attach stream when ready / refreshed.
     var appliedVersion by remember { mutableIntStateOf(-1) }
@@ -219,17 +245,32 @@ fun TvVideoScreen(
         }
     }
 
-    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) {
+            pauseFocusRequester.requestFocus()
+        } else {
+            boxFocusRequester.requestFocus()
+        }
+    }
     androidx.activity.compose.BackHandler { onBack() }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .focusRequester(focusRequester)
+            .focusRequester(boxFocusRequester)
             .focusable()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // When controls are visible, let focus move between the overlay buttons.
+                // Down hides them so the user can seek again.
+                if (controlsVisible) {
+                    if (event.key == Key.DirectionDown) {
+                        controlsVisible = false
+                        return@onKeyEvent true
+                    }
+                    return@onKeyEvent false
+                }
                 when (event.key) {
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         if (isPlaying) player.pause() else player.play()
@@ -310,9 +351,12 @@ fun TvVideoScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    androidx.tv.material3.Button(onClick = {
-                        if (isPlaying) player.pause() else player.play()
-                    }) {
+                    androidx.tv.material3.Button(
+                        onClick = {
+                            if (isPlaying) player.pause() else player.play()
+                        },
+                        modifier = Modifier.focusRequester(pauseFocusRequester),
+                    ) {
                         androidx.tv.material3.Text(if (isPlaying) "Пауза" else "Смотреть")
                     }
                     androidx.tv.material3.Button(onClick = { player.seekBack() }) {
@@ -325,6 +369,17 @@ fun TvVideoScreen(
                         showQualityPicker = !showQualityPicker
                     }) {
                         androidx.tv.material3.Text("Качество")
+                    }
+                    androidx.tv.material3.Button(onClick = viewModel::toggleBookmark) {
+                        Icon(
+                            imageVector = if (state.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = null,
+                            tint = androidx.tv.material3.MaterialTheme.colorScheme.onPrimary,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        androidx.tv.material3.Text(
+                            if (state.isBookmarked) "В избранном" else "В избранное"
+                        )
                     }
                     if (state.details?.author != null) {
                         androidx.tv.material3.Text(

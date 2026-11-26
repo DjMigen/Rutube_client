@@ -26,6 +26,8 @@ import ru.rutubeclient.tv.ui.screens.TvChannelScreen
 import ru.rutubeclient.tv.ui.screens.TvChannelViewModel
 import ru.rutubeclient.tv.ui.screens.TvHomeScreen
 import ru.rutubeclient.tv.ui.screens.TvHomeViewModel
+import ru.rutubeclient.tv.ui.screens.TvLibraryScreen
+import ru.rutubeclient.tv.ui.screens.TvLibraryViewModel
 import ru.rutubeclient.tv.ui.screens.TvSearchScreen
 import ru.rutubeclient.tv.ui.screens.TvSearchViewModel
 import ru.rutubeclient.tv.ui.screens.TvSubscriptionsScreen
@@ -37,6 +39,7 @@ object TvRoutes {
     const val HOME = "home"
     const val SEARCH = "search"
     const val SUBSCRIPTIONS = "subscriptions"
+    const val LIBRARY = "library"
     const val VIDEO = "video/{videoId}"
     const val CHANNEL = "channel/{authorId}?name={name}"
 
@@ -62,6 +65,7 @@ private val topLevel = listOf(
     TopLevel(TvRoutes.HOME, "Главная"),
     TopLevel(TvRoutes.SEARCH, "Поиск"),
     TopLevel(TvRoutes.SUBSCRIPTIONS, "Подписки"),
+    TopLevel(TvRoutes.LIBRARY, "Библиотека"),
 )
 
 @Composable
@@ -126,6 +130,16 @@ fun TvNavHost() {
                 TvSubscriptionsScreen(
                     vm,
                     onChannelClick = { id, name -> navController.navigate(TvRoutes.channel(id, name)) },
+                )
+            }
+            composable(TvRoutes.LIBRARY) {
+                val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
+                val vm: TvLibraryViewModel = viewModel(factory = tvVmFactory {
+                    TvLibraryViewModel(container.repository)
+                })
+                TvLibraryScreen(
+                    vm,
+                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
                 )
             }
             composable(
