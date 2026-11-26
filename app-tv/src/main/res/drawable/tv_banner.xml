@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TV launcher banner: 320x180 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path
+        android:fillColor="#D32F2F"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M140,62 L140,118 L196,90 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,74 h60 v10 h-60z M36,90 h84 v10 h-84z M36,106 h48 v10 h-48z" />
+</vector>
