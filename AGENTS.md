@@ -46,7 +46,8 @@ verified against the live service and are used by the app:
 | Channel videos | `GET /api/video/person/{authorId}/?page=N` |
 | TV shows / series catalog | `GET /api/metainfo/tv/?page=N` |
 | TV show details | `GET /api/metainfo/tv/{id}/` |
-| TV show episodes | `GET /api/metainfo/tv/{id}/video?page=N` |
+| TV show seasons | `GET /api/metainfo/tv/{id}/season` |
+| TV show episodes | `GET /api/metainfo/tv/{id}/video?season=N&page=N` |
 | Top movies | `GET /api/v2/video/recommendation/main/top_movie?limit=20&page=N` |
 | Top serials | `GET /api/v2/video/recommendation/main/top_serial?limit=20&page=N` |
 | Top cartoons | `GET /api/v2/video/recommendation/main/top_cartoon?limit=20&page=N` |

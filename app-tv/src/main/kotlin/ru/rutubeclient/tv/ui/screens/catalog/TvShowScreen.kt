@@ -42,21 +42,14 @@ fun TvShowScreen(
     onVideoClick: (videoId: String, nextVideoId: String?) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var selectedSeason by remember { mutableStateOf<Int?>(null) }
 
     val show = state.show
-    val seasonsAvailable = remember(show, state.episodes) {
-        val count = show?.seasonsCount ?: 0
-        count > 1 && state.episodes.any { extractSeason(it.title) != null }
+    val seasonsToShow = remember(state.seasons) {
+        state.seasons.filter { it != 0 }.ifEmpty { state.seasons }
     }
-    val visibleEpisodes = remember(state.episodes, selectedSeason) {
-        if (selectedSeason == null) {
-            state.episodes
-        } else {
-            state.episodes.filter { extractSeason(it.title) == selectedSeason }
-                .ifEmpty { state.episodes }
-        }
-    }
+    val seasonsAvailable = seasonsToShow.size > 1
+    val selectedSeason = state.selectedSeason
+    val visibleEpisodes = state.episodes
 
     LaunchedEffect(Unit) {
         // TV show screen loads everything on init; episodes are paginated via loadMore.
@@ -81,16 +74,11 @@ fun TvShowScreen(
             Spacer(Modifier.height(12.dp))
             if (seasonsAvailable) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item {
-                        Button(onClick = { selectedSeason = null }) {
-                            Text(if (selectedSeason == null) "• Все" else "Все")
-                        }
-                    }
-                    items((1..(show?.seasonsCount ?: 0)).toList()) { season ->
-                        Button(onClick = { selectedSeason = season }) {
+                    items(seasonsToShow) { season ->
+                        Button(onClick = { viewModel.selectSeason(season) }) {
                             Text(
-                                if (selectedSeason == season) "• $season сезон"
-                                else "$season сезон"
+                                if (selectedSeason == season) "• ${if (season == 0) "Все" else "$season сезон"}"
+                                else if (season == 0) "Все" else "$season сезон"
                             )
                         }
                     }

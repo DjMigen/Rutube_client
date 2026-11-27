@@ -54,21 +54,14 @@ fun TvShowScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
-    var selectedSeason by remember { mutableStateOf<Int?>(null) }
 
     val show = state.show
-    val seasonsAvailable = remember(show, state.episodes) {
-        val count = show?.seasonsCount ?: 0
-        count > 1 && state.episodes.any { extractSeason(it.title) != null }
+    val seasonsToShow = remember(state.seasons) {
+        state.seasons.filter { it != 0 }.ifEmpty { state.seasons }
     }
-    val visibleEpisodes = remember(state.episodes, selectedSeason) {
-        if (selectedSeason == null) {
-            state.episodes
-        } else {
-            state.episodes.filter { extractSeason(it.title) == selectedSeason }
-                .ifEmpty { state.episodes }
-        }
-    }
+    val seasonsAvailable = seasonsToShow.size > 1
+    val selectedSeason = state.selectedSeason
+    val visibleEpisodes = state.episodes
 
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -117,18 +110,11 @@ fun TvShowScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp),
                         ) {
-                            item {
-                                FilterChip(
-                                    selected = selectedSeason == null,
-                                    onClick = { selectedSeason = null },
-                                    label = { Text("Все") },
-                                )
-                            }
-                            items((1..(show?.seasonsCount ?: 0)).toList()) { season ->
+                            items(seasonsToShow) { season ->
                                 FilterChip(
                                     selected = selectedSeason == season,
-                                    onClick = { selectedSeason = season },
-                                    label = { Text("$season сезон") },
+                                    onClick = { viewModel.selectSeason(season) },
+                                    label = { Text(if (season == 0) "Все" else "$season сезон") },
                                 )
                             }
                         }

@@ -120,6 +120,13 @@ internal data class TvShowGenreDto(
 )
 
 @Serializable
+internal data class TvShowSeasonDto(
+    @SerialName("number") val number: Int = 0,
+    @SerialName("url") val url: String = "",
+    @SerialName("lightweight_url") val lightweightUrl: String? = null,
+)
+
+@Serializable
 internal data class TvShowDto(
     @SerialName("id") val id: Int = 0,
     @SerialName("name") val name: String = "",

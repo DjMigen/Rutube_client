@@ -60,9 +60,25 @@ class RuTubeApi(
         json.decodeFromString<TvShowDto>(get("/api/metainfo/tv/$id/")).toModel()
     }
 
+    /** Seasons available for a TV show / series. */
+    suspend fun getTvShowSeasons(tvId: Int): List<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            json.decodeFromString<List<TvShowSeasonDto>>(get("/api/metainfo/tv/$tvId/season"))
+                .map { it.number }
+                .distinct()
+                .sorted()
+        }.getOrDefault(emptyList())
+    }
+
     /** Episodes (videos) of a TV show / series. */
-    suspend fun getTvShowVideos(tvId: Int, page: Int = 1): Page<Video> =
-        getPage("/api/metainfo/tv/$tvId/video?page=$page") { it: VideoDto -> it.toModel() }
+    suspend fun getTvShowVideos(tvId: Int, page: Int = 1, season: Int? = null): Page<Video> {
+        val path = if (season == null) {
+            "/api/metainfo/tv/$tvId/video?page=$page"
+        } else {
+            "/api/metainfo/tv/$tvId/video?season=$season&page=$page"
+        }
+        return getPage(path) { it: VideoDto -> it.toModel() }
+    }
 
     /** Curated top movies from the "Кино и сериалы" feed. */
     suspend fun getTopMovies(page: Int = 1): Page<Video> =
