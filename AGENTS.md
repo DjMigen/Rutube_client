@@ -98,6 +98,12 @@ verified on the video screen.
 ## Runtime notes
 - **Card clicks**: use `Modifier.clickable(role = Role.Button)` on Material3
   cards.
+- **Netflix-style home**: the mobile home uses a hero banner + horizontal
+  rows (snap-fling `LazyRow`) instead of a grid, plus a "Продолжить просмотр"
+  row derived from local history with a progress bar. The hero's "Мой список"
+  toggles a bookmark. `HomeViewModel` takes `api` + `repository`. The TV home
+  mirrors this with `TvHeroBanner` and `TvContinueWatchingRow`. Components
+  live in `mobile/ui/components/NetflixComponents.kt` and `tv/ui/TvComponents.kt`.
 - **Pull-to-refresh (mobile)**: custom `PullToRefresh` modifier in
   `mobile/ui/components/PullToRefresh.kt` (nestedScroll-based, not the
   experimental PullToRefreshBox which interfered with child clicks). The
@@ -124,6 +130,29 @@ verified on the video screen.
 - **Cast**: optional; guarded so the app works without Google Play services.
 - **TV player**: uses a local ExoPlayer and custom D-pad controls; it does not
   rely on the playback service because background playback is not required on TV.
+- **Voice search (TV)**: `MainActivity` handles `ACTION_SEARCH` / `SearchManager.QUERY`
+  and forwards the query to `TvSearchScreen`.
+- **Autoplay next episode**: series episodes pass `nextVideoId` via the video
+  route (`video/{id}?next={nextId}`). When playback ends, a 5-second countdown
+  overlay offers "Смотреть сейчас" / "Отмена"; a "Следующая серия" button is
+  also available in the controls (mobile + TV).
+- **"Потому что вы смотрели X"**: home rows on mobile and TV load recent
+  channel videos for the last two history entries.
+- **Subtitles / audio tracks**: selected through ExoPlayer `currentTracks` and
+  `TrackSelectionParameters`; buttons appear when the HLS manifest exposes
+  multiple text/audio tracks.
+- **Hero muted preview**: the hero banner resolves the featured video's HLS URL
+  and plays it muted, looping, with a 2-second delay; the static backdrop fades
+  out once the first frame renders.
+- **"Вы всё ещё смотрите?"**: after 3 hours of continuous playback an
+  AlertDialog (mobile) or full-screen overlay (TV) asks the user to continue;
+  "Стоп" pauses the player.
+- **Smart downloads**: downloading a series episode also queues the next episode
+  (mobile).
+- **Ratings**: thumbs-up / thumbs-down buttons on the video screen persist to
+  Room via `RatingEntity` (mobile + TV).
+- **Live search suggestions**: the mobile search field shows matching recent
+  local queries as chips while typing.
 
 ## What is NOT implemented
 - Login / account sync (everything is local by design).

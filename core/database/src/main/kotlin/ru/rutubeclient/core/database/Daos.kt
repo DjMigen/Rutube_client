@@ -20,6 +20,9 @@ interface HistoryDao {
     @Query("DELETE FROM history WHERE videoId = :videoId")
     suspend fun remove(videoId: String)
 
+    @Query("UPDATE history SET positionMs = 0 WHERE videoId = :videoId")
+    suspend fun resetPosition(videoId: String)
+
     @Query("DELETE FROM history")
     suspend fun clear()
 }
@@ -64,6 +67,18 @@ interface SearchQueryDao {
 
     @Query("DELETE FROM search_queries")
     suspend fun clear()
+}
+
+@Dao
+interface RatingDao {
+    @Query("SELECT * FROM ratings WHERE videoId = :videoId")
+    suspend fun get(videoId: String): RatingEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: RatingEntity)
+
+    @Query("DELETE FROM ratings WHERE videoId = :videoId")
+    suspend fun remove(videoId: String)
 }
 
 @Dao

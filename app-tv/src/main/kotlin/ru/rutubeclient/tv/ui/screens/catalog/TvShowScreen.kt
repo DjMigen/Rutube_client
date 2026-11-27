@@ -12,11 +12,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -24,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import ru.rutubeclient.core.model.TvShow
@@ -34,9 +39,24 @@ import ru.rutubeclient.tv.ui.TvVideoCard
 @Composable
 fun TvShowScreen(
     viewModel: TvShowViewModel,
-    onVideoClick: (String) -> Unit,
+    onVideoClick: (videoId: String, nextVideoId: String?) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var selectedSeason by remember { mutableStateOf<Int?>(null) }
+
+    val show = state.show
+    val seasonsAvailable = remember(show, state.episodes) {
+        val count = show?.seasonsCount ?: 0
+        count > 1 && state.episodes.any { extractSeason(it.title) != null }
+    }
+    val visibleEpisodes = remember(state.episodes, selectedSeason) {
+        if (selectedSeason == null) {
+            state.episodes
+        } else {
+            state.episodes.filter { extractSeason(it.title) == selectedSeason }
+                .ifEmpty { state.episodes }
+        }
+    }
 
     LaunchedEffect(Unit) {
         // TV show screen loads everything on init; episodes are paginated via loadMore.
@@ -59,17 +79,36 @@ fun TvShowScreen(
             Spacer(Modifier.height(24.dp))
             Text("Эпизоды", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(12.dp))
+            if (seasonsAvailable) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item {
+                        Button(onClick = { selectedSeason = null }) {
+                            Text(if (selectedSeason == null) "• Все" else "Все")
+                        }
+                    }
+                    items((1..(show?.seasonsCount ?: 0)).toList()) { season ->
+                        Button(onClick = { selectedSeason = season }) {
+                            Text(
+                                if (selectedSeason == season) "• $season сезон"
+                                else "$season сезон"
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(vertical = 10.dp),
             ) {
                 itemsIndexed(
-                    state.episodes,
+                    visibleEpisodes,
                     key = { index, video -> "${video.id}_$index" },
-                ) { _, video ->
+                ) { index, video ->
+                    val nextId = visibleEpisodes.getOrNull(index + 1)?.id
                     TvVideoCard(
                         video = video,
-                        onClick = { onVideoClick(video.id) },
+                        onClick = { onVideoClick(video.id, nextId) },
                     )
                 }
             }
@@ -115,6 +154,21 @@ private fun TvShowHeader(show: TvShow?) {
             }
         }
     }
+}
+
+/** Best-effort season number extraction from an episode title. */
+private fun extractSeason(title: String): Int? {
+    val patterns = listOf(
+        Regex("""(\d+)\s*сезон""", RegexOption.IGNORE_CASE),
+        Regex("""сезон\s*(\d+)""", RegexOption.IGNORE_CASE),
+        Regex("""S(\d{1,2})E\d+""", RegexOption.IGNORE_CASE),
+        Regex("""(\d{1,2})x\d+"""),
+    )
+    for (pattern in patterns) {
+        val match = pattern.find(title) ?: continue
+        return match.groupValues[1].toIntOrNull()
+    }
+    return null
 }
 
 private fun buildTvShowMetaLine(show: TvShow): String {

@@ -2,6 +2,8 @@ package ru.rutubeclient.core.database
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import ru.rutubeclient.core.model.Author
+import ru.rutubeclient.core.model.Video
 
 /** Watch history entry with the last playback position. */
 @Entity(tableName = "history")
@@ -14,7 +16,33 @@ data class HistoryEntity(
     val authorName: String?,
     val positionMs: Long,
     val watchedAt: Long,
-)
+) {
+    /** Playback progress in 0..1. */
+    val progress: Float
+        get() = if (durationSec > 0) {
+            (positionMs.toFloat() / (durationSec * 1000f)).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+
+    /** True if the video was started but not finished yet. */
+    val isInProgress: Boolean get() = positionMs > 0L && progress < 0.95f
+
+    /** Convert to a [Video] suitable for display in feeds (continue watching). */
+    fun toVideo(): Video = Video(
+        id = videoId,
+        title = title,
+        description = null,
+        thumbnailUrl = thumbnailUrl,
+        durationSec = durationSec,
+        hits = 0,
+        createdTs = null,
+        author = authorId?.let { Author(it, authorName.orEmpty(), null) },
+        category = null,
+        isLive = false,
+        isOnAir = false,
+    )
+}
 
 /** Local subscription to a channel (no account needed). */
 @Entity(tableName = "subscriptions")
@@ -42,6 +70,14 @@ data class BookmarkEntity(
 data class SearchQueryEntity(
     @PrimaryKey val query: String,
     val usedAt: Long,
+)
+
+/** Local thumbs-up / thumbs-down rating for a video. */
+@Entity(tableName = "ratings")
+data class RatingEntity(
+    @PrimaryKey val videoId: String,
+    val liked: Boolean,
+    val ratedAt: Long,
 )
 
 /** Download queue / downloaded videos metadata (mirrors Media3 DownloadManager). */

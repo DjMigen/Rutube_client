@@ -15,6 +15,7 @@ class LibraryRepository(db: AppDatabase) {
     private val bookmarkDao = db.bookmarkDao()
     private val searchQueryDao = db.searchQueryDao()
     private val downloadDao = db.downloadDao()
+    private val ratingDao = db.ratingDao()
 
     // --- History ---
 
@@ -38,6 +39,9 @@ class LibraryRepository(db: AppDatabase) {
     }
 
     suspend fun removeHistory(videoId: String) = historyDao.remove(videoId)
+
+    /** Reset the saved playback position to 0 ("watch from the beginning"). */
+    suspend fun resetPosition(videoId: String) = historyDao.resetPosition(videoId)
 
     suspend fun clearHistory() = historyDao.clear()
 
@@ -108,4 +112,14 @@ class LibraryRepository(db: AppDatabase) {
     suspend fun upsertDownload(entity: DownloadEntity) = downloadDao.upsert(entity)
 
     suspend fun removeDownload(videoId: String) = downloadDao.remove(videoId)
+
+    // --- Ratings ---
+
+    suspend fun getRating(videoId: String): RatingEntity? = ratingDao.get(videoId)
+
+    suspend fun rateVideo(videoId: String, liked: Boolean) = ratingDao.upsert(
+        RatingEntity(videoId, liked, System.currentTimeMillis())
+    )
+
+    suspend fun removeRating(videoId: String) = ratingDao.remove(videoId)
 }

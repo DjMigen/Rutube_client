@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbDownOffAlt
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbUpOffAlt
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -69,6 +73,8 @@ class TvVideoViewModel(
     private val videoId: String,
     private val api: RuTubeApi,
     private val repository: LibraryRepository,
+    private val startFromBeginning: Boolean = false,
+    private val nextVideoId: String? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -79,6 +85,8 @@ class TvVideoViewModel(
         val isLoading: Boolean = true,
         val error: String? = null,
         val isBookmarked: Boolean = false,
+        val nextVideoId: String? = null,
+        val rating: ru.rutubeclient.core.database.RatingEntity? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -101,7 +109,9 @@ class TvVideoViewModel(
                     _state.update {
                         it.copy(
                             details = details,
-                            startPositionMs = history?.positionMs ?: 0L,
+                            startPositionMs = if (startFromBeginning) 0L else history?.positionMs ?: 0L,
+                            nextVideoId = this@TvVideoViewModel.nextVideoId,
+                            rating = repository.getRating(videoId),
                             isLoading = false,
                         )
                     }
@@ -148,6 +158,28 @@ class TvVideoViewModel(
         }
     }
 
+    fun rate(liked: Boolean) {
+        viewModelScope.launch {
+            repository.rateVideo(videoId, liked)
+            _state.update {
+                it.copy(
+                    rating = ru.rutubeclient.core.database.RatingEntity(
+                        videoId,
+                        liked,
+                        System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+    }
+
+    fun removeRating() {
+        viewModelScope.launch {
+            repository.removeRating(videoId)
+            _state.update { it.copy(rating = null) }
+        }
+    }
+
     private fun observeBookmarks() {
         viewModelScope.launch {
             repository.isBookmarked(videoId).collect { bookmarked ->
@@ -158,11 +190,15 @@ class TvVideoViewModel(
 }
 
 /** Full-screen TV player with D-pad controls: OK = play/pause, ←/→ = ±10s, ↑ = controls. */
+/** Three hours in milliseconds; triggers the "Are you still watching?" dialog. */
+private const val STILL_WATCHING_MS = 3 * 60 * 60 * 1000L
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun TvVideoScreen(
     viewModel: TvVideoViewModel,
     onBack: () -> Unit,
+    onVideoClick: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -176,6 +212,43 @@ fun TvVideoScreen(
     var durationMs by remember { mutableLongStateOf(0L) }
     var showQualityPicker by remember { mutableStateOf(false) }
     var selectedQualityHeight by remember { mutableIntStateOf(0) }
+    var sleepTimerMinutes by remember { mutableStateOf<Int?>(null) }
+    var nextEpisodeCountdown by remember { mutableStateOf<Int?>(null) }
+    var textLanguages by remember { mutableStateOf(listOf<String>()) }
+    var audioLanguages by remember { mutableStateOf(listOf<String>()) }
+    var showTextPicker by remember { mutableStateOf(false) }
+    var showAudioPicker by remember { mutableStateOf(false) }
+    var selectedTextLanguage by remember { mutableStateOf<String?>(null) }
+    var selectedAudioLanguage by remember { mutableStateOf<String?>(null) }
+    var showStillWatching by remember { mutableStateOf(false) }
+    var stillWatchingAck by remember { mutableStateOf(0) }
+
+    // Sleep timer: pause playback when it elapses.
+    LaunchedEffect(sleepTimerMinutes) {
+        val minutes = sleepTimerMinutes ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(minutes * 60_000L)
+        player.pause()
+        sleepTimerMinutes = null
+    }
+
+    // Autoplay next episode countdown.
+    LaunchedEffect(nextEpisodeCountdown) {
+        var remaining = nextEpisodeCountdown ?: return@LaunchedEffect
+        while (remaining > 0) {
+            kotlinx.coroutines.delay(1000)
+            remaining--
+            nextEpisodeCountdown = remaining
+        }
+        nextEpisodeCountdown = null
+        state.nextVideoId?.let { onVideoClick(it) }
+    }
+
+    // "Are you still watching?" after 3 hours of continuous playback.
+    LaunchedEffect(isPlaying, stillWatchingAck) {
+        if (!isPlaying) return@LaunchedEffect
+        delay(STILL_WATCHING_MS)
+        showStillWatching = true
+    }
 
     val boxFocusRequester = remember { FocusRequester() }
     val pauseFocusRequester = remember { FocusRequester() }
@@ -202,10 +275,18 @@ fun TvVideoScreen(
 
             override fun onTracksChanged(tracks: Tracks) {
                 qualities = qualityController.availableQualities()
+                textLanguages = qualityController.availableTextLanguages()
+                audioLanguages = qualityController.availableAudioLanguages()
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED && state.nextVideoId != null) {
+                    nextEpisodeCountdown = 5
+                }
             }
         }
         player.addListener(listener)
@@ -370,6 +451,36 @@ fun TvVideoScreen(
                     }) {
                         androidx.tv.material3.Text("Качество")
                     }
+                    if (state.nextVideoId != null) {
+                        androidx.tv.material3.Button(onClick = {
+                            state.nextVideoId?.let { onVideoClick(it) }
+                        }) {
+                            androidx.tv.material3.Text("Следующая серия")
+                        }
+                    }
+                    if (audioLanguages.isNotEmpty()) {
+                        androidx.tv.material3.Button(onClick = { showAudioPicker = !showAudioPicker }) {
+                            androidx.tv.material3.Text("Аудио")
+                        }
+                    }
+                    if (textLanguages.isNotEmpty()) {
+                        androidx.tv.material3.Button(onClick = { showTextPicker = !showTextPicker }) {
+                            androidx.tv.material3.Text("Субтитры")
+                        }
+                    }
+                    androidx.tv.material3.Button(onClick = {
+                        sleepTimerMinutes = when (sleepTimerMinutes) {
+                            null -> 15
+                            15 -> 30
+                            30 -> 45
+                            45 -> 60
+                            else -> null
+                        }
+                    }) {
+                        androidx.tv.material3.Text(
+                            sleepTimerMinutes?.let { "Сон: ${it}м" } ?: "Таймер сна"
+                        )
+                    }
                     androidx.tv.material3.Button(onClick = viewModel::toggleBookmark) {
                         Icon(
                             imageVector = if (state.isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -379,6 +490,30 @@ fun TvVideoScreen(
                         Spacer(Modifier.width(8.dp))
                         androidx.tv.material3.Text(
                             if (state.isBookmarked) "В избранном" else "В избранное"
+                        )
+                    }
+                    androidx.tv.material3.Button(onClick = {
+                        when (state.rating?.liked) {
+                            true -> viewModel.removeRating()
+                            else -> viewModel.rate(true)
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (state.rating?.liked == true) Icons.Default.ThumbUp else Icons.Default.ThumbUpOffAlt,
+                            contentDescription = null,
+                            tint = androidx.tv.material3.MaterialTheme.colorScheme.onPrimary,
+                        )
+                    }
+                    androidx.tv.material3.Button(onClick = {
+                        when (state.rating?.liked) {
+                            false -> viewModel.removeRating()
+                            else -> viewModel.rate(false)
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (state.rating?.liked == false) Icons.Default.ThumbDown else Icons.Default.ThumbDownOffAlt,
+                            contentDescription = null,
+                            tint = androidx.tv.material3.MaterialTheme.colorScheme.onPrimary,
                         )
                     }
                     if (state.details?.author != null) {
@@ -404,6 +539,111 @@ fun TvVideoScreen(
                                 )
                             }
                         }
+                    }
+                }
+                if (showAudioPicker && audioLanguages.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        audioLanguages.forEach { lang ->
+                            androidx.tv.material3.Button(onClick = {
+                                selectedAudioLanguage = lang
+                                qualityController.selectAudioLanguage(lang)
+                                showAudioPicker = false
+                            }) {
+                                androidx.tv.material3.Text(
+                                    if (lang == selectedAudioLanguage) "• ${lang.uppercase()}"
+                                    else lang.uppercase()
+                                )
+                            }
+                        }
+                    }
+                }
+                if (showTextPicker && textLanguages.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.tv.material3.Button(onClick = {
+                            selectedTextLanguage = null
+                            qualityController.selectTextLanguage(null)
+                            showTextPicker = false
+                        }) {
+                            androidx.tv.material3.Text(
+                                if (selectedTextLanguage == null) "• ВЫКЛ" else "ВЫКЛ"
+                            )
+                        }
+                        textLanguages.forEach { lang ->
+                            androidx.tv.material3.Button(onClick = {
+                                selectedTextLanguage = lang
+                                qualityController.selectTextLanguage(lang)
+                                showTextPicker = false
+                            }) {
+                                androidx.tv.material3.Text(
+                                    if (lang == selectedTextLanguage) "• ${lang.uppercase()}"
+                                    else lang.uppercase()
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val countdown = nextEpisodeCountdown
+    if (countdown != null && state.nextVideoId != null) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.75f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.tv.material3.Text(
+                    "Следующая серия через $countdown",
+                    style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    androidx.tv.material3.Button(onClick = {
+                        nextEpisodeCountdown = null
+                        state.nextVideoId?.let { onVideoClick(it) }
+                    }) {
+                        androidx.tv.material3.Text("Смотреть сейчас")
+                    }
+                    androidx.tv.material3.Button(onClick = { nextEpisodeCountdown = null }) {
+                        androidx.tv.material3.Text("Отмена")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showStillWatching) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.85f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.tv.material3.Text(
+                    "Вы всё ещё смотрите?",
+                    style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
+                    color = androidx.compose.ui.graphics.Color.White,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    androidx.tv.material3.Button(onClick = {
+                        showStillWatching = false
+                        stillWatchingAck++
+                    }) {
+                        androidx.tv.material3.Text("Да")
+                    }
+                    androidx.tv.material3.Button(onClick = {
+                        player.pause()
+                        showStillWatching = false
+                    }) {
+                        androidx.tv.material3.Text("Стоп")
                     }
                 }
             }

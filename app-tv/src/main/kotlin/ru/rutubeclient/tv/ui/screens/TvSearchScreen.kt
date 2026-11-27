@@ -68,6 +68,17 @@ class TvSearchViewModel(private val api: RuTubeApi) : ViewModel() {
         searchJob = viewModelScope.launch { doSearch(q) }
     }
 
+    fun setQuery(query: String) {
+        _state.update { it.copy(query = query) }
+        searchJob?.cancel()
+        val q = query.trim()
+        if (q.isEmpty()) return
+        searchJob = viewModelScope.launch {
+            delay(300)
+            doSearch(q)
+        }
+    }
+
     private suspend fun doSearch(query: String) {
         _state.update { it.copy(isLoading = true, searched = true, error = null) }
         runCatching { api.searchVideos(query, 1) }

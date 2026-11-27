@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,71 +34,88 @@ import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.mobile.ui.formatDuration
 import ru.rutubeclient.mobile.ui.formatViews
 
-/** Grid/list card for a video in feeds, search results and channel pages. */
+/** Netflix-style card for a video in feeds, search results and channel pages. */
 @Composable
 fun VideoCard(
     video: Video,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    Column(
         modifier = modifier.clickable(role = Role.Button, onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column {
-            Box {
-                AsyncImage(
-                    model = video.thumbnailUrl,
-                    contentDescription = video.title,
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(8.dp)),
+        ) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = video.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            if (video.isRecent()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(4.dp),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f),
-                    contentScale = ContentScale.Crop,
-                )
-                if (video.isLiveNow) {
+                        .align(Alignment.TopStart)
+                        .padding(6.dp),
+                ) {
+                    Text(
+                        "НОВИНКА",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            }
+            if (video.isLiveNow) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp),
+                ) {
+                    Text(
+                        "LIVE",
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+            } else {
+                val duration = formatDuration(video.durationSec)
+                if (duration.isNotEmpty()) {
                     Surface(
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
                         shape = RoundedCornerShape(4.dp),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .padding(6.dp),
                     ) {
                         Text(
-                            "LIVE",
+                            duration,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimary,
                         )
-                    }
-                } else {
-                    val duration = formatDuration(video.durationSec)
-                    if (duration.isNotEmpty()) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
-                            shape = RoundedCornerShape(4.dp),
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(6.dp),
-                        ) {
-                            Text(
-                                duration,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
                     }
                 }
             }
-            Column(Modifier.padding(8.dp)) {
-                Text(
-                    video.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                val author = video.author?.name.orEmpty()
-                val views = formatViews(video.hits)
+        }
+        Column(Modifier.padding(vertical = 6.dp)) {
+            Text(
+                video.title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val author = video.author?.name.orEmpty()
+            val views = formatViews(video.hits)
+            if (author.isNotEmpty() || views.isNotEmpty()) {
                 Text(
                     if (author.isNotEmpty()) "$author • $views" else views,
                     style = MaterialTheme.typography.bodySmall,

@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.itemsIndexed as columnItemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,6 +30,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -141,6 +144,12 @@ private fun HistoryTab(
     }
 }
 
+private enum class BookmarkSort(val label: String) {
+    DATE("По дате"),
+    TITLE("По названию"),
+    AUTHOR("По автору"),
+}
+
 @Composable
 private fun BookmarksTab(
     items: List<ru.rutubeclient.core.database.BookmarkEntity>,
@@ -151,8 +160,34 @@ private fun BookmarksTab(
         EmptyTab("Нет видео «Смотреть позже»")
         return
     }
-    LazyColumn {
-        columnItemsIndexed(items, key = { index, entry -> "${entry.videoId}_$index" }) { _, entry ->
+    var sort by rememberSaveable { mutableStateOf(BookmarkSort.DATE) }
+    var sortMenu by rememberSaveable { mutableStateOf(false) }
+    val sorted = when (sort) {
+        BookmarkSort.DATE -> items.sortedByDescending { it.addedAt }
+        BookmarkSort.TITLE -> items.sortedBy { it.title.lowercase() }
+        BookmarkSort.AUTHOR -> items.sortedBy { it.authorName?.lowercase().orEmpty() }
+    }
+    Column {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { sortMenu = true }) { Text("Сортировка: ${sort.label}") }
+            DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                BookmarkSort.entries.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label) },
+                        onClick = {
+                            sort = option
+                            sortMenu = false
+                        },
+                    )
+                }
+            }
+        }
+        LazyColumn {
+            columnItemsIndexed(sorted, key = { index, entry -> "${entry.videoId}_$index" }) { _, entry ->
             VideoListItem(
                 title = entry.title,
                 thumbnailUrl = entry.thumbnailUrl,
@@ -169,6 +204,7 @@ private fun BookmarksTab(
                 },
             )
             HorizontalDivider(thickness = 0.5.dp)
+            }
         }
     }
 }

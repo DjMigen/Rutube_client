@@ -24,11 +24,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -90,6 +92,30 @@ fun SearchScreen(
                 onSearch = { viewModel.onQuerySubmitted(state.query) }
             ),
         )
+
+        val suggestions = remember(state.query, recent) {
+            recent.map { it.query }
+                .filter { it.contains(state.query, ignoreCase = true) && it != state.query }
+                .take(6)
+        }
+        if (suggestions.isNotEmpty()) {
+            LazyRow(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(suggestions, key = { it }) { query ->
+                    SuggestionChip(
+                        onClick = {
+                            viewModel.onQueryChange(query)
+                            viewModel.onQuerySubmitted(query)
+                        },
+                        label = { Text(query) },
+                    )
+                }
+            }
+        }
 
         when {
             state.isLoading && state.results.isEmpty() -> LoadingBox(Modifier.weight(1f))

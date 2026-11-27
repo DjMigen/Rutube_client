@@ -28,6 +28,17 @@ data class Video(
     val isOnAir: Boolean,
 ) {
     val isLiveNow: Boolean get() = isLive && isOnAir
+
+    /** True if the video was created within the last [withinDays] days. */
+    fun isRecent(withinDays: Long = 14): Boolean {
+        val ts = createdTs ?: return false
+        return try {
+            val created = java.time.LocalDateTime.parse(ts)
+            created.isAfter(java.time.LocalDateTime.now().minusDays(withinDays))
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
 
 /** Full video details for the watch screen. */

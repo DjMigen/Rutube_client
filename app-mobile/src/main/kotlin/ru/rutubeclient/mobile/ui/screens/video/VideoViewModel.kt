@@ -28,6 +28,8 @@ class VideoViewModel(
     private val api: RuTubeApi,
     private val repository: LibraryRepository,
     private val downloadsManager: DownloadsManager,
+    private val startFromBeginning: Boolean = false,
+    private val nextVideoId: String? = null,
 ) : ViewModel() {
 
     data class UiState(
@@ -49,6 +51,9 @@ class VideoViewModel(
         /** Download state from Room (null = not in downloads). */
         val download: DownloadEntity? = null,
         val channelVideos: List<Video> = emptyList(),
+        val similarVideos: List<Video> = emptyList(),
+        val nextVideoId: String? = null,
+        val rating: ru.rutubeclient.core.database.RatingEntity? = null,
         val actionMessage: String? = null,
     )
 
@@ -72,16 +77,20 @@ class VideoViewModel(
             runCatching { api.getVideo(videoId) }
                 .onSuccess { details ->
                     val history = repository.getHistoryEntry(videoId)
+                    val rating = repository.getRating(videoId)
                     _state.update {
                         it.copy(
                             details = details,
-                            startPositionMs = history?.positionMs ?: 0L,
+                            startPositionMs = if (startFromBeginning) 0L else history?.positionMs ?: 0L,
+                            nextVideoId = this@VideoViewModel.nextVideoId,
+                            rating = rating,
                             isLoading = false,
                         )
                     }
                     resolveStream()
                     loadComments(reset = true)
                     loadChannelVideos(details)
+                    loadSimilarVideos(details)
                 }
                 .onFailure { e ->
                     _state.update {
@@ -159,6 +168,12 @@ class VideoViewModel(
             downloadsManager.enqueue(details, qualityHeight)
                 .onSuccess {
                     _state.update { it.copy(actionMessage = "Загрузка началась") }
+                    // Smart download: also queue the next episode if available.
+                    state.value.nextVideoId?.let { nextId ->
+                        runCatching { api.getVideo(nextId) }
+                            .getOrNull()
+                            ?.let { nextDetails -> downloadsManager.enqueue(nextDetails, qualityHeight) }
+                    }
                 }
                 .onFailure { e ->
                     _state.update {
@@ -199,6 +214,18 @@ class VideoViewModel(
         }
     }
 
+    private fun loadSimilarVideos(details: VideoDetails) {
+        val categoryId = details.category?.id ?: return
+        viewModelScope.launch {
+            runCatching { api.getCategoryVideos(categoryId, 1) }
+                .onSuccess { page ->
+                    _state.update {
+                        it.copy(similarVideos = page.items.filter { v -> v.id != videoId }.take(10))
+                    }
+                }
+        }
+    }
+
     private fun loadChannelVideos(details: VideoDetails) {
         val authorId = details.author?.id ?: return
         viewModelScope.launch {
@@ -233,6 +260,20 @@ class VideoViewModel(
                 .collect { download ->
                     _state.update { it.copy(download = download) }
                 }
+        }
+    }
+
+    fun rate(liked: Boolean) {
+        viewModelScope.launch {
+            repository.rateVideo(videoId, liked)
+            _state.update { it.copy(rating = ru.rutubeclient.core.database.RatingEntity(videoId, liked, System.currentTimeMillis())) }
+        }
+    }
+
+    fun removeRating() {
+        viewModelScope.launch {
+            repository.removeRating(videoId)
+            _state.update { it.copy(rating = null) }
         }
     }
 }

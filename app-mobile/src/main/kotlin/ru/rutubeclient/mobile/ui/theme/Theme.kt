@@ -5,15 +5,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val RuTubeRed = Color(0xFFE53935)
+private val NetflixRed = Color(0xFFE50914)
 
 private val Colors = darkColorScheme(
-    primary = RuTubeRed,
+    primary = NetflixRed,
     onPrimary = Color.White,
     secondary = Color(0xFF90CAF9),
-    background = Color(0xFF121212),
-    surface = Color(0xFF1B1B1B),
-    surfaceVariant = Color(0xFF262626),
+    background = Color(0xFF141414),
+    surface = Color(0xFF1F1F1F),
+    surfaceVariant = Color(0xFF2A2A2A),
     onBackground = Color(0xFFEAEAEA),
     onSurface = Color(0xFFEAEAEA),
     onSurfaceVariant = Color(0xFFB0B0B0),

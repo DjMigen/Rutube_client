@@ -152,4 +152,39 @@ class QualityController(private val player: Player) {
         }
         player.setTrackSelectionParameters(params.build())
     }
+
+    /** Available text track languages (subtitles/captions). */
+    fun availableTextLanguages(): List<String> = player.currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { group ->
+            (0 until group.length).mapNotNull { group.getTrackFormat(it).language }
+        }
+        .distinct()
+
+    /** Available audio track languages. */
+    fun availableAudioLanguages(): List<String> = player.currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_AUDIO }
+        .flatMap { group ->
+            (0 until group.length).mapNotNull { group.getTrackFormat(it).language }
+        }
+        .distinct()
+
+    fun selectTextLanguage(language: String?) {
+        val params = player.trackSelectionParameters.buildUpon()
+        if (language == null) {
+            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else {
+            params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            params.setPreferredTextLanguage(language)
+        }
+        player.setTrackSelectionParameters(params.build())
+    }
+
+    fun selectAudioLanguage(language: String?) {
+        val params = player.trackSelectionParameters.buildUpon()
+        if (language != null) {
+            params.setPreferredAudioLanguage(language)
+        }
+        player.setTrackSelectionParameters(params.build())
+    }
 }

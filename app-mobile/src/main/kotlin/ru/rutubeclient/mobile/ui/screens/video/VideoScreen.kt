@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.util.Rational
 import android.view.View
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -38,14 +39,22 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbDownOffAlt
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.ThumbUpOffAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -95,6 +104,9 @@ import ru.rutubeclient.mobile.ui.components.VideoCard
 import ru.rutubeclient.mobile.ui.formatDate
 import ru.rutubeclient.mobile.ui.formatViews
 
+/** Three hours in milliseconds; triggers the "Are you still watching?" dialog. */
+private const val STILL_WATCHING_MS = 3 * 60 * 60 * 1000L
+
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,11 +148,50 @@ fun VideoScreen(
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showDownloadDialog by remember { mutableStateOf(false) }
+    var showSleepDialog by remember { mutableStateOf(false) }
+    var sleepTimerMinutes by remember { mutableStateOf<Int?>(null) }
+    var nextEpisodeCountdown by remember { mutableStateOf<Int?>(null) }
+    var textLanguages by remember { mutableStateOf(listOf<String>()) }
+    var audioLanguages by remember { mutableStateOf(listOf<String>()) }
+    var selectedTextLanguage by remember { mutableStateOf<String?>(null) }
+    var selectedAudioLanguage by remember { mutableStateOf<String?>(null) }
+    var showTextDialog by remember { mutableStateOf(false) }
+    var showAudioDialog by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableStateOf(1f) }
     var isFullscreen by remember { mutableStateOf(false) }
     var isManualFullscreen by remember { mutableStateOf(false) }
     var controllerVisible by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var showStillWatching by remember { mutableStateOf(false) }
+    var stillWatchingAck by remember { mutableStateOf(0) }
     val configuration = LocalConfiguration.current
+
+    // Sleep timer: pause playback when it elapses.
+    LaunchedEffect(sleepTimerMinutes) {
+        val minutes = sleepTimerMinutes ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(minutes * 60_000L)
+        controller?.pause()
+        sleepTimerMinutes = null
+    }
+
+    // Autoplay next episode countdown.
+    LaunchedEffect(nextEpisodeCountdown) {
+        var remaining = nextEpisodeCountdown ?: return@LaunchedEffect
+        while (remaining > 0) {
+            kotlinx.coroutines.delay(1000)
+            remaining--
+            nextEpisodeCountdown = remaining
+        }
+        nextEpisodeCountdown = null
+        state.nextVideoId?.let { onVideoClick(it) }
+    }
+
+    // "Are you still watching?" after 3 hours of continuous playback.
+    LaunchedEffect(isPlaying, stillWatchingAck) {
+        if (!isPlaying) return@LaunchedEffect
+        delay(STILL_WATCHING_MS)
+        showStillWatching = true
+    }
 
     // Auto-enter fullscreen on landscape rotation; auto-exit when returning to portrait
     // unless the user explicitly enabled fullscreen manually.
@@ -165,6 +216,18 @@ fun VideoScreen(
 
             override fun onTracksChanged(tracks: Tracks) {
                 qualities = qualityController?.availableQualities().orEmpty()
+                textLanguages = qualityController?.availableTextLanguages().orEmpty()
+                audioLanguages = qualityController?.availableAudioLanguages().orEmpty()
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED && state.nextVideoId != null) {
+                    nextEpisodeCountdown = 5
+                }
+            }
+
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
             }
         }
         c.addListener(listener)
@@ -386,6 +449,30 @@ fun VideoScreen(
                             Spacer(Modifier.width(4.dp))
                             Text(if (state.isBookmarked) "В закладках" else "Смотреть позже")
                         }
+                        TextButton(onClick = {
+                            when (state.rating?.liked) {
+                                true -> viewModel.removeRating()
+                                else -> viewModel.rate(true)
+                            }
+                        }) {
+                            Icon(
+                                if (state.rating?.liked == true) Icons.Default.ThumbUp
+                                else Icons.Default.ThumbUpOffAlt,
+                                contentDescription = null,
+                            )
+                        }
+                        TextButton(onClick = {
+                            when (state.rating?.liked) {
+                                false -> viewModel.removeRating()
+                                else -> viewModel.rate(false)
+                            }
+                        }) {
+                            Icon(
+                                if (state.rating?.liked == false) Icons.Default.ThumbDown
+                                else Icons.Default.ThumbDownOffAlt,
+                                contentDescription = null,
+                            )
+                        }
                         TextButton(onClick = { showDownloadDialog = true }) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
@@ -417,6 +504,30 @@ fun VideoScreen(
                             Icon(Icons.Default.Speed, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
                             Text("Скорость")
+                        }
+                        TextButton(onClick = { showSleepDialog = true }) {
+                            Icon(Icons.Default.Schedule, contentDescription = null)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                sleepTimerMinutes?.let { "Сон: ${it}м" } ?: "Таймер сна"
+                            )
+                        }
+                        if (state.nextVideoId != null) {
+                            TextButton(onClick = { state.nextVideoId?.let(onVideoClick) }) {
+                                Icon(Icons.Default.SkipNext, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Следующая серия")
+                            }
+                        }
+                        if (audioLanguages.isNotEmpty()) {
+                            TextButton(onClick = { showAudioDialog = true }) {
+                                Text("Аудио")
+                            }
+                        }
+                        if (textLanguages.isNotEmpty()) {
+                            TextButton(onClick = { showTextDialog = true }) {
+                                Text("Субтитры")
+                            }
                         }
                         TextButton(onClick = {
                             val activity = context.findActivity()
@@ -454,6 +565,22 @@ fun VideoScreen(
                         Spacer(Modifier.height(8.dp))
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             rowItemsIndexed(state.channelVideos, key = { index, video -> "${video.id}_$index" }) { _, video ->
+                                VideoCard(
+                                    video = video,
+                                    onClick = { onVideoClick(video.id) },
+                                    modifier = Modifier.width(240.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    // --- Similar ---
+                    if (state.similarVideos.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text("Похожие", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowItemsIndexed(state.similarVideos, key = { index, video -> "${video.id}_$index" }) { _, video ->
                                 VideoCard(
                                     video = video,
                                     onClick = { onVideoClick(video.id) },
@@ -513,6 +640,76 @@ fun VideoScreen(
                 showSpeedDialog = false
             },
             onDismiss = { showSpeedDialog = false },
+        )
+    }
+    val countdown = nextEpisodeCountdown
+    if (countdown != null && state.nextVideoId != null) {
+        NextEpisodeOverlay(
+            countdown = countdown,
+            onCancel = { nextEpisodeCountdown = null },
+            onPlayNow = {
+                nextEpisodeCountdown = null
+                onVideoClick(state.nextVideoId!!)
+            },
+        )
+    }
+
+    if (showAudioDialog) {
+        TrackSelectionDialog(
+            title = "Аудиодорожка",
+            options = audioLanguages,
+            selected = selectedAudioLanguage,
+            noneLabel = "По умолчанию",
+            onSelect = { lang ->
+                selectedAudioLanguage = lang
+                qualityController?.selectAudioLanguage(lang)
+                showAudioDialog = false
+            },
+            onDismiss = { showAudioDialog = false },
+        )
+    }
+    if (showTextDialog) {
+        TrackSelectionDialog(
+            title = "Субтитры",
+            options = textLanguages,
+            selected = selectedTextLanguage,
+            noneLabel = "Выключить",
+            onSelect = { lang ->
+                selectedTextLanguage = lang
+                qualityController?.selectTextLanguage(lang)
+                showTextDialog = false
+            },
+            onDismiss = { showTextDialog = false },
+        )
+    }
+    if (showStillWatching) {
+        AlertDialog(
+            onDismissRequest = { showStillWatching = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    showStillWatching = false
+                    stillWatchingAck++
+                }) { Text("Да") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    controller?.pause()
+                    showStillWatching = false
+                }) { Text("Стоп") }
+            },
+            title = { Text("Вы всё ещё смотрите?") },
+            text = { Text("Нажмите «Да», чтобы продолжить просмотр.") },
+        )
+    }
+
+    if (showSleepDialog) {
+        SleepTimerDialog(
+            current = sleepTimerMinutes,
+            onSelect = { minutes ->
+                sleepTimerMinutes = minutes
+                showSleepDialog = false
+            },
+            onDismiss = { showSleepDialog = false },
         )
     }
     if (showDownloadDialog) {
@@ -628,6 +825,124 @@ private fun SpeedDialog(
                         RadioButton(selected = speed == current, onClick = { onSelect(speed) })
                         Text(if (speed == 1f) "Обычная" else "${speed}x")
                     }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun NextEpisodeOverlay(
+    countdown: Int,
+    onCancel: () -> Unit,
+    onPlayNow: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.75f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "Следующая серия через $countdown",
+                style = MaterialTheme.typography.headlineSmall,
+                color = androidx.compose.ui.graphics.Color.White,
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = onPlayNow) {
+                    Text("Смотреть сейчас")
+                }
+                OutlinedButton(
+                    onClick = onCancel,
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = androidx.compose.ui.graphics.Color.White,
+                    ),
+                ) {
+                    Text("Отмена")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSelectionDialog(
+    title: String,
+    options: List<String>,
+    selected: String?,
+    noneLabel: String,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        title = { Text(title) },
+        text = {
+            Column {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(null) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selected == null, onClick = { onSelect(null) })
+                    Text(noneLabel)
+                }
+                options.forEach { lang ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(lang) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = lang == selected, onClick = { onSelect(lang) })
+                        Text(lang.uppercase())
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SleepTimerDialog(
+    current: Int?,
+    onSelect: (Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val options = listOf(15, 30, 45, 60)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        title = { Text("Таймер сна") },
+        text = {
+            Column {
+                options.forEach { minutes ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(minutes) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = minutes == current, onClick = { onSelect(minutes) })
+                        Text("$minutes минут")
+                    }
+                }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(null) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = current == null, onClick = { onSelect(null) })
+                    Text("Выключить")
                 }
             }
         },

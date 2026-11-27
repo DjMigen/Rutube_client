@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -12,8 +14,9 @@ import androidx.room.RoomDatabase
         BookmarkEntity::class,
         SearchQueryEntity::class,
         DownloadEntity::class,
+        RatingEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun searchQueryDao(): SearchQueryDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun ratingDao(): RatingDao
 
     companion object {
         @Volatile
@@ -33,7 +37,20 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "rutube_client.db",
-                ).build().also { instance = it }
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build().also { instance = it }
             }
+    }
+}
+
+private val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS ratings (" +
+                "videoId TEXT PRIMARY KEY NOT NULL, " +
+                "liked INTEGER NOT NULL, " +
+                "ratedAt INTEGER NOT NULL)"
+        )
     }
 }

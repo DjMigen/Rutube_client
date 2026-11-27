@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -45,10 +50,25 @@ import ru.rutubeclient.mobile.ui.formatDuration
 fun TvShowScreen(
     viewModel: TvShowViewModel,
     onBack: () -> Unit,
-    onVideoClick: (String) -> Unit,
+    onVideoClick: (videoId: String, nextVideoId: String?) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    var selectedSeason by remember { mutableStateOf<Int?>(null) }
+
+    val show = state.show
+    val seasonsAvailable = remember(show, state.episodes) {
+        val count = show?.seasonsCount ?: 0
+        count > 1 && state.episodes.any { extractSeason(it.title) != null }
+    }
+    val visibleEpisodes = remember(state.episodes, selectedSeason) {
+        if (selectedSeason == null) {
+            state.episodes
+        } else {
+            state.episodes.filter { extractSeason(it.title) == selectedSeason }
+                .ifEmpty { state.episodes }
+        }
+    }
 
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -92,12 +112,35 @@ fun TvShowScreen(
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                     Spacer(Modifier.height(8.dp))
+                    if (seasonsAvailable) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                        ) {
+                            item {
+                                FilterChip(
+                                    selected = selectedSeason == null,
+                                    onClick = { selectedSeason = null },
+                                    label = { Text("Все") },
+                                )
+                            }
+                            items((1..(show?.seasonsCount ?: 0)).toList()) { season ->
+                                FilterChip(
+                                    selected = selectedSeason == season,
+                                    onClick = { selectedSeason = season },
+                                    label = { Text("$season сезон") },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
 
                 itemsIndexed(
-                    state.episodes,
+                    visibleEpisodes,
                     key = { index, video -> "${video.id}_$index" },
-                ) { _, video ->
+                ) { index, video ->
+                    val nextId = visibleEpisodes.getOrNull(index + 1)?.id
                     VideoListItem(
                         title = video.title,
                         thumbnailUrl = video.thumbnailUrl,
@@ -105,7 +148,7 @@ fun TvShowScreen(
                             video.author?.name,
                             formatDuration(video.durationSec),
                         ).joinToString(" • "),
-                        onClick = { onVideoClick(video.id) },
+                        onClick = { onVideoClick(video.id, nextId) },
                     )
                 }
 
@@ -169,6 +212,21 @@ private fun TvShowHeader(show: ru.rutubeclient.core.model.TvShow?) {
             }
         }
     }
+}
+
+/** Best-effort season number extraction from an episode title. */
+private fun extractSeason(title: String): Int? {
+    val patterns = listOf(
+        Regex("""(\d+)\s*сезон""", RegexOption.IGNORE_CASE),
+        Regex("""сезон\s*(\d+)""", RegexOption.IGNORE_CASE),
+        Regex("""S(\d{1,2})E\d+""", RegexOption.IGNORE_CASE),
+        Regex("""(\d{1,2})x\d+"""),
+    )
+    for (pattern in patterns) {
+        val match = pattern.find(title) ?: continue
+        return match.groupValues[1].toIntOrNull()
+    }
+    return null
 }
 
 private fun buildTvShowMetaLine(show: ru.rutubeclient.core.model.TvShow): String {

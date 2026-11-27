@@ -56,10 +56,13 @@ object Routes {
     const val LIBRARY = "library"
     const val CATALOG = "catalog"
     const val TV_SHOW = "tvshow/{tvId}"
-    const val VIDEO = "video/{videoId}"
+    const val VIDEO = "video/{videoId}?fromStart={fromStart}&next={next}"
     const val CHANNEL = "channel/{authorId}?name={name}"
 
-    fun video(id: String) = "video/$id"
+    fun video(id: String, fromStart: Boolean = false, next: String? = null): String {
+        val base = "video/$id?fromStart=$fromStart"
+        return if (next.isNullOrEmpty()) base else "$base&next=$next"
+    }
     fun tvShow(id: Int) = "tvshow/$id"
     fun channel(authorId: Long, name: String) =
         "channel/$authorId?name=${android.net.Uri.encode(name)}"
@@ -131,9 +134,13 @@ fun AppNavHost(castManager: CastManager) {
             composable(Routes.HOME) {
                 val container = App.container(androidx.compose.ui.platform.LocalContext.current)
                 val vm: HomeViewModel = viewModel(factory = vmFactory {
-                    HomeViewModel(container.api)
+                    HomeViewModel(container.api, container.repository)
                 })
-                HomeScreen(vm, onVideoClick = { navController.navigate(Routes.video(it)) })
+                HomeScreen(
+                    vm,
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                    onWatchFromStart = { navController.navigate(Routes.video(it, fromStart = true)) },
+                )
             }
             composable(Routes.SEARCH) {
                 val container = App.container(androidx.compose.ui.platform.LocalContext.current)
@@ -185,23 +192,40 @@ fun AppNavHost(castManager: CastManager) {
                 TvShowScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
-                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                    onVideoClick = { videoId, nextId ->
+                        navController.navigate(Routes.video(videoId, next = nextId))
+                    },
                 )
             }
             composable(
                 Routes.VIDEO,
-                arguments = listOf(navArgument("videoId") { type = NavType.StringType }),
+                arguments = listOf(
+                    navArgument("videoId") { type = NavType.StringType },
+                    navArgument("fromStart") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
+                    navArgument("next") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                        nullable = true
+                    },
+                ),
             ) { entry ->
                 val videoId = entry.arguments?.getString("videoId") ?: return@composable
+                val fromStart = entry.arguments?.getBoolean("fromStart") ?: false
+                val next = entry.arguments?.getString("next")
                 val container = App.container(androidx.compose.ui.platform.LocalContext.current)
                 val vm: VideoViewModel = viewModel(
-                    key = "video-$videoId",
+                    key = "video-$videoId-$fromStart-$next",
                     factory = vmFactory {
                         VideoViewModel(
                             videoId,
                             container.api,
                             container.repository,
                             container.downloadsManager,
+                            startFromBeginning = fromStart,
+                            nextVideoId = next,
                         )
                     },
                 )
