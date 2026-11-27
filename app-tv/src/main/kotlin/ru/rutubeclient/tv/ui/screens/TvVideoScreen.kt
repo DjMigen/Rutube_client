@@ -61,7 +61,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.rutubeclient.core.database.LibraryRepository
+import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
+import ru.rutubeclient.core.model.normalizeSeriesTitle
+import ru.rutubeclient.core.model.parseSeriesInfo
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.QualityController
@@ -116,6 +119,7 @@ class TvVideoViewModel(
                         )
                     }
                     resolveStream()
+                    discoverSeries(details)
                 }
                 .onFailure { e ->
                     _state.update {
@@ -185,6 +189,61 @@ class TvVideoViewModel(
             repository.isBookmarked(videoId).collect { bookmarked ->
                 _state.update { it.copy(isBookmarked = bookmarked) }
             }
+        }
+    }
+
+    private fun discoverSeries(details: VideoDetails) {
+        viewModelScope.launch {
+            // If already provided by a catalog/TV show, nothing to discover.
+            if (this@TvVideoViewModel.nextVideoId != null) return@launch
+
+            val tvShowId = details.tvShowId
+            if (tvShowId != null) {
+                val season = details.season ?: 1
+                runCatching { api.getTvShowVideos(tvShowId, 1, season) }
+                    .onSuccess { page ->
+                        val next = page.items
+                            .filter { it.id != videoId }
+                            .firstOrNull { parseSeriesInfo(it.title)?.episode != null }
+                            ?.id
+                        next?.let { _state.update { it.copy(nextVideoId = next) } }
+                    }
+                return@launch
+            }
+
+            val currentInfo = parseSeriesInfo(details.title) ?: return@launch
+            val baseNorm = normalizeSeriesTitle(currentInfo.baseTitle)
+            if (baseNorm.length < 3) return@launch
+
+            val authorId = details.author?.id ?: return@launch
+            val candidatePool = mutableListOf<Video>()
+            for (page in 1..3) {
+                runCatching { api.getChannelVideos(authorId, page) }
+                    .onSuccess { p -> candidatePool += p.items }
+            }
+            runCatching { api.searchVideos(currentInfo.baseTitle, 1) }
+                .onSuccess { p ->
+                    candidatePool += p.items.filter { it.author?.id == authorId }
+                }
+
+            val candidates = candidatePool
+                .distinctBy { it.id }
+                .filter { v ->
+                    v.id != videoId && parseSeriesInfo(v.title)?.let { info ->
+                        normalizeSeriesTitle(info.baseTitle) == baseNorm
+                    } == true
+                }
+
+            if (candidates.isEmpty()) return@launch
+            val currentSeason = currentInfo.season ?: 1
+            val currentEpisode = currentInfo.episode ?: 0
+            val nextId = candidates
+                .filter { (parseSeriesInfo(it.title)?.season ?: 1) == currentSeason }
+                .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+                .firstOrNull { (parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE) > currentEpisode }
+                ?.id
+
+            nextId?.let { _state.update { it.copy(nextVideoId = nextId) } }
         }
     }
 }

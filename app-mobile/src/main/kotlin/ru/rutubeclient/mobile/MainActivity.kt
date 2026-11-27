@@ -232,7 +232,12 @@ fun AppNavHost(castManager: CastManager) {
                 VideoScreen(
                     viewModel = vm,
                     castManager = castManager,
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.HOME) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
                     onVideoClick = { navController.navigate(Routes.video(it)) },
                     onChannelClick = { id, name -> navController.navigate(Routes.channel(id, name)) },
                 )

@@ -241,7 +241,12 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
                 )
                 TvVideoScreen(
                     vm,
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        navController.navigate(TvRoutes.HOME) {
+                            popUpTo(TvRoutes.HOME) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
                     onVideoClick = { navController.navigate(TvRoutes.video(it)) },
                 )
             }

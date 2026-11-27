@@ -1,12 +1,10 @@
 package ru.rutubeclient.mobile.ui.screens.video
 
 import android.app.Activity
-import android.app.PictureInPictureParams
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.util.Rational
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -38,7 +36,6 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Hd
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
@@ -275,6 +272,11 @@ fun VideoScreen(
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
         }
     }
+    // Back always returns to the home screen, not to the previous video.
+    BackHandler(enabled = true) {
+        onBack()
+    }
+
     BackHandler(enabled = isFullscreen) {
         isFullscreen = false
         isManualFullscreen = false
@@ -518,18 +520,6 @@ fun VideoScreen(
                             TextButton(onClick = { showTextDialog = true }) {
                                 Text("Субтитры")
                             }
-                        }
-                        TextButton(onClick = {
-                            val activity = context.findActivity()
-                            activity?.enterPictureInPictureMode(
-                                PictureInPictureParams.Builder()
-                                    .setAspectRatio(Rational(16, 9))
-                                    .build()
-                            )
-                        }) {
-                            Icon(Icons.Default.PictureInPictureAlt, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("PiP")
                         }
                     }
 
