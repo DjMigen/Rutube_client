@@ -137,7 +137,15 @@ fun VideoScreen(
         val url = state.streamUrl ?: return@LaunchedEffect
         if (appliedStreamVersion == state.streamVersion) return@LaunchedEffect
         appliedStreamVersion = state.streamVersion
-        val position = if (c.currentPosition > 0) c.currentPosition else state.startPositionMs
+        val isNewMedia = c.currentMediaItem?.mediaId != viewModel.videoId
+        val position = if (isNewMedia) {
+            state.startPositionMs
+        } else if (c.currentPosition > 0) {
+            c.currentPosition
+        } else {
+            state.startPositionMs
+        }
+        c.stop()
         c.setMediaItem(PlayerFactory.mediaItem(url, mediaId = viewModel.videoId))
         c.prepare()
         if (position > 0) c.seekTo(position)
