@@ -7,7 +7,6 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.util.Rational
-import android.view.LayoutInflater
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -69,7 +68,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,17 +88,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
-import androidx.media3.session.MediaController
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
-import ru.rutubeclient.mobile.R
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.QualityController
 import ru.rutubeclient.core.player.QualityOption
 import ru.rutubeclient.mobile.player.CastManager
-import ru.rutubeclient.mobile.player.connectMediaController
 import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
@@ -127,35 +122,24 @@ fun VideoScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Connect to the shared playback service.
-    var controller by remember { mutableStateOf<MediaController?>(null) }
-    LaunchedEffect(Unit) {
-        controller = context.connectMediaController()
-    }
+    // Local ExoPlayer for this screen. Using a screen-local player avoids
+    // surface lifecycle issues when switching episodes through navigation.
+    val player = remember { PlayerFactory.create(context) }
 
     // Attach the freshly resolved stream to the player.
     var appliedStreamVersion by remember { mutableIntStateOf(-1) }
-    var appliedController by remember { mutableStateOf<MediaController?>(null) }
-    LaunchedEffect(controller, state.streamVersion, state.streamUrl) {
-        val c = controller ?: return@LaunchedEffect
+    LaunchedEffect(player, state.streamVersion, state.streamUrl) {
         val url = state.streamUrl ?: return@LaunchedEffect
         if (appliedStreamVersion == state.streamVersion) return@LaunchedEffect
         appliedStreamVersion = state.streamVersion
-        val isNewMedia = c.currentMediaItem?.mediaId != viewModel.videoId
-        val position = if (isNewMedia) {
-            state.startPositionMs
-        } else if (c.currentPosition > 0) {
-            c.currentPosition
-        } else {
-            state.startPositionMs
-        }
-        c.setMediaItem(PlayerFactory.mediaItem(url, mediaId = viewModel.videoId), position)
-        c.prepare()
-        c.play()
+        val position = if (player.currentPosition > 0) player.currentPosition else state.startPositionMs
+        player.setMediaItem(PlayerFactory.mediaItem(url, mediaId = viewModel.videoId), position)
+        player.prepare()
+        player.play()
     }
 
     // Player events: retry on error (expired signature), collect qualities.
-    val qualityController = remember(controller) { controller?.let { QualityController(it) } }
+    val qualityController = remember(player) { QualityController(player) }
     var qualities by remember { mutableStateOf(listOf<QualityOption>()) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
@@ -182,7 +166,7 @@ fun VideoScreen(
     LaunchedEffect(sleepTimerMinutes) {
         val minutes = sleepTimerMinutes ?: return@LaunchedEffect
         kotlinx.coroutines.delay(minutes * 60_000L)
-        controller?.pause()
+        player.pause()
         sleepTimerMinutes = null
     }
 
@@ -219,17 +203,16 @@ fun VideoScreen(
         }
     }
 
-    DisposableEffect(controller) {
-        val c = controller ?: return@DisposableEffect onDispose {}
+    DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                viewModel.onPlaybackError(c.currentPosition)
+                viewModel.onPlaybackError(player.currentPosition)
             }
 
             override fun onTracksChanged(tracks: Tracks) {
-                qualities = qualityController?.availableQualities().orEmpty()
-                textLanguages = qualityController?.availableTextLanguages().orEmpty()
-                audioLanguages = qualityController?.availableAudioLanguages().orEmpty()
+                qualities = qualityController.availableQualities()
+                textLanguages = qualityController.availableTextLanguages()
+                audioLanguages = qualityController.availableAudioLanguages()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -242,32 +225,27 @@ fun VideoScreen(
                 isPlaying = playing
             }
         }
-        c.addListener(listener)
+        player.addListener(listener)
         onDispose {
-            c.removeListener(listener)
+            player.removeListener(listener)
         }
     }
 
     // Periodically persist the playback position into history.
-    LaunchedEffect(controller, state.details) {
-        val c = controller ?: return@LaunchedEffect
+    LaunchedEffect(player, state.details) {
         while (true) {
             delay(5000)
-            if (c.duration > 0 && c.currentPosition > 0) {
-                viewModel.savePosition(c.currentPosition)
+            if (player.duration > 0 && player.currentPosition > 0) {
+                viewModel.savePosition(player.currentPosition)
             }
         }
     }
 
-    // On leaving the screen: save position and release the controller.
-    // The player is shared via PlaybackService; stopping it here would
-    // interrupt playback for the next video.
+    // On leaving the screen: save position and release the local player.
     DisposableEffect(Unit) {
         onDispose {
-            controller?.let { c ->
-                viewModel.savePositionFinal(c.currentPosition)
-                c.release()
-            }
+            viewModel.savePositionFinal(player.currentPosition)
+            player.release()
         }
     }
 
@@ -355,43 +333,34 @@ fun VideoScreen(
                     modifier = if (isFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
                 ) {
                     Box(Modifier.fillMaxSize()) {
-                        key(viewModel.videoId) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    (LayoutInflater.from(ctx)
-                                        .inflate(R.layout.player_view, null, false) as PlayerView)
-                                        .apply {
-                                            useController = true
-                                            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
-                                            setControllerVisibilityListener(
-                                                PlayerView.ControllerVisibilityListener { visibility ->
-                                                    controllerVisible = visibility == View.VISIBLE
-                                                }
-                                            )
-                                            controller?.let { player = it }
+                        AndroidView(
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    useController = true
+                                    setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                                    setControllerVisibilityListener(
+                                        PlayerView.ControllerVisibilityListener { visibility ->
+                                            controllerVisible = visibility == View.VISIBLE
                                         }
-                                },
-                                update = { view ->
-                                    if (appliedController != controller) {
-                                        appliedController?.let { view.player = null }
-                                        controller?.let { view.player = it }
-                                        appliedController = controller
-                                    }
-                                    view.resizeMode = if (isFullscreen) {
-                                        AspectRatioFrameLayout.RESIZE_MODE_FILL
-                                    } else {
-                                        AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                    }
-                                },
-                                modifier = if (isFullscreen) {
-                                    Modifier.fillMaxSize()
+                                    )
+                                }
+                            },
+                            update = { view ->
+                                view.player = player
+                                view.resizeMode = if (isFullscreen) {
+                                    AspectRatioFrameLayout.RESIZE_MODE_FILL
                                 } else {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(16f / 9f)
-                                },
-                            )
-                        }
+                                    AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                }
+                            },
+                            modifier = if (isFullscreen) {
+                                Modifier.fillMaxSize()
+                            } else {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(16f / 9f)
+                            },
+                        )
                         if (controllerVisible) {
                             IconButton(
                                 onClick = {
@@ -508,8 +477,8 @@ fun VideoScreen(
                         TextButton(onClick = {
                             val url = state.streamUrl
                             if (url != null && isCasting) {
-                                castManager.loadVideo(details, url, controller?.currentPosition ?: 0L)
-                                controller?.pause()
+                                castManager.loadVideo(details, url, player.currentPosition)
+                                player.pause()
                             }
                         }) {
                             Icon(Icons.Default.Cast, contentDescription = null)
@@ -695,7 +664,7 @@ fun VideoScreen(
             current = playbackSpeed,
             onSelect = { speed ->
                 playbackSpeed = speed
-                controller?.setPlaybackSpeed(speed)
+                player.setPlaybackSpeed(speed)
                 showSpeedDialog = false
             },
             onDismiss = { showSpeedDialog = false },
@@ -752,7 +721,7 @@ fun VideoScreen(
             },
             dismissButton = {
                 TextButton(onClick = {
-                    controller?.pause()
+                    player.pause()
                     showStillWatching = false
                 }) { Text("Стоп") }
             },

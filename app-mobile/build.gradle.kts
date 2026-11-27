@@ -56,8 +56,6 @@ android {
     buildFeatures {
         compose = true
     }
-
-    sourceSets["main"].res.srcDirs("src/main/res")
 }
 
 kotlin {
