@@ -542,11 +542,14 @@ fun VideoScreen(
                     if (state.seriesEpisodes.isNotEmpty()) {
                         val seriesSeasons = state.seriesSeasons.ifEmpty { listOf(1) }
                         val selectedSeason = state.selectedSeriesSeason ?: seriesSeasons.firstOrNull()
-                        val seriesEpisodesForSeason = state.seriesEpisodes.filter { v ->
-                            val info = parseSeriesInfo(v.title)
-                            val season = info?.season ?: v.season ?: 1
-                            season == selectedSeason
-                        }.ifEmpty { state.seriesEpisodes }
+                        val seriesEpisodesForSeason = state.seriesEpisodes
+                            .filter { v ->
+                                val info = parseSeriesInfo(v.title)
+                                val season = info?.season ?: v.season ?: 1
+                                season == selectedSeason
+                            }
+                            .ifEmpty { state.seriesEpisodes }
+                            .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
 
                         Spacer(Modifier.height(16.dp))
                         Text("Серии", style = MaterialTheme.typography.titleSmall)

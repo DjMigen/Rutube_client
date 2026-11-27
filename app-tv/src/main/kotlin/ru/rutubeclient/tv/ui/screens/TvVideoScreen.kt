@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -90,6 +92,9 @@ class TvVideoViewModel(
         val isBookmarked: Boolean = false,
         val nextVideoId: String? = null,
         val rating: ru.rutubeclient.core.database.RatingEntity? = null,
+        val seriesEpisodes: List<Video> = emptyList(),
+        val seriesSeasons: List<Int> = emptyList(),
+        val selectedSeriesSeason: Int? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -202,11 +207,20 @@ class TvVideoViewModel(
                 val season = details.season ?: 1
                 runCatching { api.getTvShowVideos(tvShowId, 1, season) }
                     .onSuccess { page ->
-                        val next = page.items
+                        val episodes = page.items
                             .filter { it.id != videoId }
-                            .firstOrNull { parseSeriesInfo(it.title)?.episode != null }
-                            ?.id
-                        next?.let { _state.update { it.copy(nextVideoId = next) } }
+                            .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+                        if (episodes.isNotEmpty()) {
+                            val next = episodes.firstOrNull { parseSeriesInfo(it.title)?.episode != null }?.id
+                            _state.update {
+                                it.copy(
+                                    seriesEpisodes = episodes,
+                                    seriesSeasons = listOf(season),
+                                    selectedSeriesSeason = season,
+                                    nextVideoId = next ?: it.nextVideoId,
+                                )
+                            }
+                        }
                     }
                 return@launch
             }
@@ -235,16 +249,31 @@ class TvVideoViewModel(
                 }
 
             if (candidates.isEmpty()) return@launch
-            val currentSeason = currentInfo.season ?: 1
+            val seasons = candidates.mapNotNull { parseSeriesInfo(it.title)?.season ?: it.season }
+                .distinct().sorted()
+                .ifEmpty { listOf(1) }
+            val currentSeason = currentInfo.season ?: candidates.firstOrNull()?.let { parseSeriesInfo(it.title)?.season } ?: 1
             val currentEpisode = currentInfo.episode ?: 0
-            val nextId = candidates
-                .filter { (parseSeriesInfo(it.title)?.season ?: 1) == currentSeason }
+            val seasonCandidates = candidates.filter { (parseSeriesInfo(it.title)?.season ?: it.season ?: 1) == currentSeason }
+            val sortedEpisodes = seasonCandidates
                 .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+            val nextId = sortedEpisodes
                 .firstOrNull { (parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE) > currentEpisode }
                 ?.id
 
-            nextId?.let { _state.update { it.copy(nextVideoId = nextId) } }
+            _state.update {
+                it.copy(
+                    seriesEpisodes = candidates.sortedBy { v -> parseSeriesInfo(v.title)?.episode ?: Int.MAX_VALUE },
+                    seriesSeasons = seasons,
+                    selectedSeriesSeason = currentSeason,
+                    nextVideoId = nextId ?: it.nextVideoId,
+                )
+            }
         }
+    }
+
+    fun selectSeriesSeason(season: Int) {
+        _state.update { it.copy(selectedSeriesSeason = season) }
     }
 }
 
@@ -583,6 +612,59 @@ fun TvVideoScreen(
                         )
                     }
                 }
+
+                // --- Series episodes ---
+                val seriesSeasons = state.seriesSeasons
+                val selectedSeason = state.selectedSeriesSeason ?: seriesSeasons.firstOrNull()
+                val seriesEpisodesForSeason = remember(state.seriesEpisodes, selectedSeason) {
+                    state.seriesEpisodes
+                        .filter { v ->
+                            val info = parseSeriesInfo(v.title)
+                            val season = info?.season ?: v.season ?: 1
+                            season == selectedSeason
+                        }
+                        .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+                }
+                if (seriesEpisodesForSeason.isNotEmpty()) {
+                    Spacer(Modifier.height(16.dp))
+                    if (seriesSeasons.size > 1) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            seriesSeasons.forEach { season ->
+                                androidx.tv.material3.Button(onClick = { viewModel.selectSeriesSeason(season) }) {
+                                    androidx.tv.material3.Text(
+                                        if (season == selectedSeason) "• $season сезон"
+                                        else "$season сезон"
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    androidx.tv.material3.Text(
+                        "Серии",
+                        style = androidx.tv.material3.MaterialTheme.typography.titleSmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(seriesEpisodesForSeason, key = { it.id }) { video ->
+                            val info = parseSeriesInfo(video.title)
+                            androidx.tv.material3.Button(onClick = { onVideoClick(video.id) }) {
+                                Column {
+                                    androidx.tv.material3.Text(
+                                        "${info?.episode ?: video.title} серия",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    androidx.tv.material3.Text(
+                                        formatMs(video.durationSec * 1000L),
+                                        style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (showQualityPicker && qualities.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
