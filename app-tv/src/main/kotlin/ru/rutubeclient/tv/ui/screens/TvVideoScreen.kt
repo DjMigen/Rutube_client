@@ -374,6 +374,40 @@ fun TvVideoScreen(
             .focusable()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // Dedicated media keys on the remote (play/pause, rewind, fast-forward, next/prev).
+                when (event.key) {
+                    Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
+                        if (isPlaying) player.pause() else player.play()
+                        controlsVisible = true
+                        return@onKeyEvent true
+                    }
+                    Key.MediaStop -> {
+                        player.pause()
+                        controlsVisible = true
+                        return@onKeyEvent true
+                    }
+                    Key.MediaRewind -> {
+                        player.seekBack()
+                        positionMs = player.currentPosition
+                        controlsVisible = true
+                        return@onKeyEvent true
+                    }
+                    Key.MediaFastForward -> {
+                        player.seekForward()
+                        positionMs = player.currentPosition
+                        controlsVisible = true
+                        return@onKeyEvent true
+                    }
+                    Key.MediaNext, Key.MediaSkipForward -> {
+                        state.nextVideoId?.let { onVideoClick(it) }
+                        return@onKeyEvent true
+                    }
+                    Key.MediaPrevious, Key.MediaSkipBackward -> {
+                        // No previous-episode tracking yet; keep the key consumed.
+                        return@onKeyEvent true
+                    }
+                    else -> { }
+                }
                 // When controls are visible, let focus move between the overlay buttons.
                 // Down hides them so the user can seek again.
                 if (controlsVisible) {
