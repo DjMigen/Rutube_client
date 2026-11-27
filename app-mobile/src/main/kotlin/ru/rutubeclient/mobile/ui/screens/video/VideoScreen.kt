@@ -145,11 +145,9 @@ fun VideoScreen(
         } else {
             state.startPositionMs
         }
-        c.stop()
-        c.setMediaItem(PlayerFactory.mediaItem(url, mediaId = viewModel.videoId))
+        c.setMediaItem(PlayerFactory.mediaItem(url, mediaId = viewModel.videoId), position)
         c.prepare()
-        if (position > 0) c.seekTo(position)
-        c.playWhenReady = true
+        c.play()
     }
 
     // Player events: retry on error (expired signature), collect qualities.
@@ -257,13 +255,13 @@ fun VideoScreen(
         }
     }
 
-    // On leaving the screen: save position, stop and release the controller.
+    // On leaving the screen: save position and release the controller.
+    // The player is shared via PlaybackService; stopping it here would
+    // interrupt playback for the next video.
     DisposableEffect(Unit) {
         onDispose {
             controller?.let { c ->
                 viewModel.savePositionFinal(c.currentPosition)
-                c.stop()
-                c.clearMediaItems()
                 c.release()
             }
         }
