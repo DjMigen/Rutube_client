@@ -36,6 +36,8 @@ internal data class VideoDto(
     @SerialName("category") val category: CategoryDto? = null,
     @SerialName("is_livestream") val isLivestream: Boolean = false,
     @SerialName("is_on_air") val isOnAir: Boolean = false,
+    @SerialName("season") val season: Int? = null,
+    @SerialName("tv_show_id") val tvShowId: Int? = null,
 )
 
 @Serializable
@@ -54,6 +56,8 @@ internal data class VideoDetailsDto(
     @SerialName("hashtags") val hashtags: List<String> = emptyList(),
     @SerialName("hide_comments") val hideComments: Boolean = false,
     @SerialName("pg_rating") val pgRating: PgRatingDto? = null,
+    @SerialName("season") val season: Int? = null,
+    @SerialName("tv_show_id") val tvShowId: Int? = null,
 )
 
 @Serializable
@@ -158,6 +162,8 @@ internal fun VideoDto.toModel() = Video(
     category = category?.toModel(),
     isLive = isLivestream,
     isOnAir = isOnAir,
+    season = season,
+    tvShowId = tvShowId,
 )
 
 internal fun VideoDetailsDto.toModel() = VideoDetails(
@@ -175,6 +181,8 @@ internal fun VideoDetailsDto.toModel() = VideoDetails(
     hashtags = hashtags,
     commentsEnabled = !hideComments,
     pgRatingAge = pgRating?.age,
+    season = season,
+    tvShowId = tvShowId,
 )
 
 internal fun CommentDto.toModel() = Comment(

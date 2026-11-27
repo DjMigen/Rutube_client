@@ -26,6 +26,8 @@ data class Video(
     val category: VideoCategory?,
     val isLive: Boolean,
     val isOnAir: Boolean,
+    val season: Int? = null,
+    val tvShowId: Int? = null,
 ) {
     val isLiveNow: Boolean get() = isLive && isOnAir
 
@@ -57,6 +59,8 @@ data class VideoDetails(
     val hashtags: List<String>,
     val commentsEnabled: Boolean,
     val pgRatingAge: Int?,
+    val season: Int? = null,
+    val tvShowId: Int? = null,
 )
 
 /** A comment under a video. */
@@ -83,6 +87,58 @@ data class Page<T>(
  * @param type Backend type name: "series" for serials, "tvshow" for shows.
  * @param posterUrl Best available poster (poster_url, vertical_poster_url or picture).
  */
+/** Parsed series information from a video title. */
+data class SeriesInfo(
+    val baseTitle: String,
+    val season: Int?,
+    val episode: Int?,
+)
+
+/**
+ * Best-effort extraction of a series base title and season/episode numbers
+ * from a RuTube video title.
+ */
+fun parseSeriesInfo(title: String): SeriesInfo? {
+    var t = title.trim()
+    if (t.isEmpty()) return null
+
+    // Season + episode patterns: "Сериал, 1 сезон, 2 серия", "S01E02", "1x02", "1 сезон 2 выпуск"
+    val seasonEpisodePatterns = listOf(
+        Regex("""(?i)(.+?)[,\s]+(\d+)\s*сезон[,\s]+(\d+)\s*(?:серия|выпуск|эпизод)"""),
+        Regex("""(?i)(.+?)[,\s]+s(\d{1,2})e(\d{1,3})"""),
+        Regex("""(?i)(.+?)[,\s]+(\d{1,2})x(\d{1,3})"""),
+        Regex("""(?i)(.+?)[,\s]+(\d+)\s*сезон[,\s]+(\d+)\s*часть"""),
+    )
+    for (p in seasonEpisodePatterns) {
+        val m = p.find(t) ?: continue
+        val base = m.groupValues[1].trim().trimEnd(',', ' ', '-')
+        val season = m.groupValues[2].toIntOrNull()
+        val episode = m.groupValues[3].toIntOrNull()
+        if (base.length >= 3) return SeriesInfo(base, season, episode)
+    }
+
+    // Episode only: "Нулевой день 1 серия", "Сериал 5 выпуск"
+    val episodeOnlyPatterns = listOf(
+        Regex("""(?i)(.+?)[\s,]+(\d+)\s*(?:серия|выпуск|эпизод|часть)\b"""),
+        Regex("""(?i)(.+?)[\s,/]+(\d+)\s*из\s*\d+"""),
+    )
+    for (p in episodeOnlyPatterns) {
+        val m = p.find(t) ?: continue
+        val base = m.groupValues[1].trim().trimEnd(',', ' ', '-')
+        val episode = m.groupValues[2].toIntOrNull()
+        if (base.length >= 3 && episode != null) return SeriesInfo(base, null, episode)
+    }
+
+    return null
+}
+
+/** Normalized title for fuzzy matching of series. */
+fun normalizeSeriesTitle(title: String): String =
+    title.lowercase()
+        .replace(Regex("""[^a-zа-я0-9]+"""), " ")
+        .trim()
+        .replace(Regex("""\s+"""), " ")
+
 data class TvShow(
     val id: Int,
     val name: String,

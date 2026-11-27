@@ -19,6 +19,8 @@ import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
+import ru.rutubeclient.core.model.parseSeriesInfo
+import ru.rutubeclient.core.model.normalizeSeriesTitle
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.mobile.download.DownloadsManager
 
@@ -53,6 +55,9 @@ class VideoViewModel(
         val channelVideos: List<Video> = emptyList(),
         val similarVideos: List<Video> = emptyList(),
         val nextVideoId: String? = null,
+        val seriesEpisodes: List<Video> = emptyList(),
+        val seriesSeasons: List<Int> = emptyList(),
+        val selectedSeriesSeason: Int? = null,
         val rating: ru.rutubeclient.core.database.RatingEntity? = null,
         val actionMessage: String? = null,
     )
@@ -91,6 +96,7 @@ class VideoViewModel(
                     loadComments(reset = true)
                     loadChannelVideos(details)
                     loadSimilarVideos(details)
+                    discoverSeries(details)
                 }
                 .onFailure { e ->
                     _state.update {
@@ -274,6 +280,73 @@ class VideoViewModel(
         viewModelScope.launch {
             repository.removeRating(videoId)
             _state.update { it.copy(rating = null) }
+        }
+    }
+
+    fun selectSeriesSeason(season: Int) {
+        _state.update { it.copy(selectedSeriesSeason = season) }
+    }
+
+    private fun discoverSeries(details: VideoDetails) {
+        viewModelScope.launch {
+            val tvShowId = details.tvShowId
+            if (tvShowId != null) {
+                val season = details.season ?: 1
+                runCatching { api.getTvShowVideos(tvShowId, 1, season) }
+                    .onSuccess { page ->
+                        val episodes = page.items.filter { it.id != videoId }
+                        if (episodes.isNotEmpty()) {
+                            _state.update {
+                                it.copy(
+                                    seriesEpisodes = episodes,
+                                    seriesSeasons = listOf(season),
+                                    selectedSeriesSeason = season,
+                                )
+                            }
+                        }
+                    }
+                return@launch
+            }
+
+            val currentInfo = parseSeriesInfo(details.title) ?: return@launch
+            val baseNorm = normalizeSeriesTitle(currentInfo.baseTitle)
+            if (baseNorm.length < 3) return@launch
+
+            val authorId = details.author?.id
+            val candidatePool = mutableListOf<ru.rutubeclient.core.model.Video>()
+
+            if (authorId != null) {
+                runCatching { api.getChannelVideos(authorId, 1) }
+                    .onSuccess { page -> candidatePool += page.items }
+                runCatching { api.getChannelVideos(authorId, 2) }
+                    .onSuccess { page -> candidatePool += page.items }
+            }
+
+            runCatching { api.searchVideos(currentInfo.baseTitle, 1) }
+                .onSuccess { page -> candidatePool += page.items }
+
+            val candidates = candidatePool
+                .distinctBy { it.id }
+                .filter { v ->
+                    v.id != videoId && parseSeriesInfo(v.title)?.let { info ->
+                        normalizeSeriesTitle(info.baseTitle) == baseNorm
+                    } == true
+                }
+
+            if (candidates.isEmpty()) return@launch
+
+            val seasons = candidates.mapNotNull { parseSeriesInfo(it.title)?.season ?: it.season }
+                .distinct().sorted()
+                .ifEmpty { listOf(1) }
+
+            val currentSeason = currentInfo.season ?: candidates.firstOrNull()?.let { parseSeriesInfo(it.title)?.season } ?: 1
+            _state.update {
+                it.copy(
+                    seriesEpisodes = candidates,
+                    seriesSeasons = seasons,
+                    selectedSeriesSeason = currentSeason,
+                )
+            }
         }
     }
 }

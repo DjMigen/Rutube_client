@@ -50,6 +50,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,6 +102,7 @@ import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
 import ru.rutubeclient.mobile.ui.components.VideoCard
+import ru.rutubeclient.core.model.parseSeriesInfo
 import ru.rutubeclient.mobile.ui.formatDate
 import ru.rutubeclient.mobile.ui.formatViews
 
@@ -556,6 +558,44 @@ fun VideoScreen(
                                 .clickable { expanded = !expanded }
                                 .padding(vertical = 8.dp),
                         )
+                    }
+
+                    // --- Series episodes (catalog or discovered) ---
+                    if (state.seriesEpisodes.isNotEmpty()) {
+                        val seriesSeasons = state.seriesSeasons.ifEmpty { listOf(1) }
+                        val selectedSeason = state.selectedSeriesSeason ?: seriesSeasons.firstOrNull()
+                        val seriesEpisodesForSeason = state.seriesEpisodes.filter { v ->
+                            val info = parseSeriesInfo(v.title)
+                            val season = info?.season ?: v.season ?: 1
+                            season == selectedSeason
+                        }.ifEmpty { state.seriesEpisodes }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text("Серии", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        if (seriesSeasons.size > 1) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                seriesSeasons.forEach { season ->
+                                    item {
+                                        FilterChip(
+                                            selected = season == selectedSeason,
+                                            onClick = { viewModel.selectSeriesSeason(season) },
+                                            label = { Text(if (season == 0) "Все" else "$season сезон") },
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowItemsIndexed(seriesEpisodesForSeason, key = { index, video -> "${video.id}_$index" }) { _, video ->
+                                VideoCard(
+                                    video = video,
+                                    onClick = { onVideoClick(video.id) },
+                                    modifier = Modifier.width(240.dp),
+                                )
+                            }
+                        }
                     }
 
                     // --- More from this channel ---
