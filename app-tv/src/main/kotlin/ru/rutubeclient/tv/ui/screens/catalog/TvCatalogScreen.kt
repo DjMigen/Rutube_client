@@ -37,6 +37,8 @@ import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
+import ru.rutubeclient.core.model.CatalogEntry
+import ru.rutubeclient.core.model.CatalogTab
 import ru.rutubeclient.core.model.TvShow
 import ru.rutubeclient.tv.ui.TvErrorBox
 import ru.rutubeclient.tv.ui.TvLoadingBox
@@ -73,7 +75,7 @@ fun TvCatalogScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(TvCatalogTab.entries.toTypedArray(), key = { it.name }) { tab ->
+            items(CatalogTab.entries.toTypedArray(), key = { it.name }) { tab ->
                 val selected = state.selectedTab == tab
                 androidx.tv.material3.Button(
                     onClick = { viewModel.selectTab(tab) },
@@ -115,11 +117,11 @@ fun TvCatalogScreen(
                     key = { index, item -> "${item.stableId}_$index" },
                 ) { _, item ->
                     when (item) {
-                        is TvCatalogItem.Show -> TvShowCard(
+                        is CatalogEntry.Show -> TvShowCard(
                             show = item.show,
                             onClick = { onTvShowClick(item.show.id) },
                         )
-                        is TvCatalogItem.Video -> TvVideoCard(
+                        is CatalogEntry.Video -> TvVideoCard(
                             video = item.video,
                             onClick = { onVideoClick(item.video.id) },
                         )
@@ -191,8 +193,8 @@ fun TvShowCard(
     }
 }
 
-private val TvCatalogItem.stableId: String
+private val CatalogEntry.stableId: String
     get() = when (this) {
-        is TvCatalogItem.Show -> "show_${show.id}"
-        is TvCatalogItem.Video -> "video_${video.id}"
+        is CatalogEntry.Show -> "show_${show.id}"
+        is CatalogEntry.Video -> "video_${video.id}"
     }

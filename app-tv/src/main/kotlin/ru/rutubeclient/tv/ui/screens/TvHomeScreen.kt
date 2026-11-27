@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Video
+import ru.rutubeclient.core.network.HomeFeedLoader
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.tv.ui.ContinueItem
 import ru.rutubeclient.tv.ui.TvContinueWatchingRow
@@ -76,64 +77,24 @@ class TvHomeViewModel(
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             runCatching {
-                coroutineScope {
-                    val feedDeferred = async { api.getHomeFeed(1) }
-                    val categoriesDeferred = async {
-                        runCatching { api.getCategories() }.getOrDefault(emptyList())
+                HomeFeedLoader(api, categoryLimit = 5, alwaysRecommendations = true).load(
+                    repository.history.first().take(2).map {
+                        HomeFeedLoader.RecentHistoryEntry(it.videoId, it.title, it.authorId)
                     }
-                    val feed = feedDeferred.await()
-                    val categories = categoriesDeferred.await().take(5)
-
-                    val topMoviesDeferred = async {
-                        runCatching { api.getTopMovies(1).items }.getOrDefault(emptyList()).take(10)
-                    }
-                    val topSerialsDeferred = async {
-                        runCatching { api.getTopSerials(1).items }.getOrDefault(emptyList()).take(10)
-                    }
-
-                    val rows = mutableListOf(VideoRow("Рекомендации", feed.items))
-                    val trending = feed.items.sortedByDescending { it.hits }.take(20)
-                    if (trending.isNotEmpty()) rows += VideoRow("В тренде", trending)
-                    topMoviesDeferred.await().let {
-                        if (it.isNotEmpty()) rows += VideoRow("Топ-10 фильмов", it, RowKind.TOP10)
-                    }
-                    topSerialsDeferred.await().let {
-                        if (it.isNotEmpty()) rows += VideoRow("Топ-10 сериалов", it, RowKind.TOP10)
-                    }
-                    // Load a row per category in parallel; skip empty ones.
-                    val categoryRows = categories.map { category ->
-                        async {
-                            runCatching { api.getCategoryVideos(category.id, 1) }
-                                .getOrNull()
-                                ?.let { VideoRow(category.name, it.items) }
-                        }
-                    }.mapNotNull { it.await() }
-
-                    val becauseRows = repository.history.first()
-                        .take(2)
-                        .mapNotNull { entry ->
-                            val authorId = entry.authorId ?: return@mapNotNull null
-                            runCatching { api.getChannelVideos(authorId, 1) }
-                                .getOrNull()
-                                ?.items
-                                ?.filter { it.id != entry.videoId }
-                                ?.take(10)
-                                ?.let {
-                                    val title = entry.title.take(24)
-                                    VideoRow("Потому что вы смотрели «$title»", it)
-                                }
-                        }
-
-                    rows + categoryRows + becauseRows
-                }
+                )
             }
-                .onSuccess { rows ->
-                    val hero = rows.firstOrNull()?.videos?.firstOrNull()
+                .onSuccess { feed ->
+                    val rows = feed.rows.map { row ->
+                        VideoRow(row.title, row.videos, when (row.kind) {
+                            HomeFeedLoader.RowKind.TOP10 -> RowKind.TOP10
+                            else -> RowKind.VIDEOS
+                        })
+                    }
                     _state.update {
-                        it.copy(hero = hero, rows = rows, isLoading = false, error = null)
+                        it.copy(hero = feed.hero, rows = rows, isLoading = false, error = null)
                     }
                     recomputeHeroBookmarked()
-                    hero?.let { resolveHeroStream(it.id) }
+                    feed.hero?.let { resolveHeroStream(it.id) }
                 }
                 .onFailure { e ->
                     _state.update {

@@ -77,13 +77,13 @@ object PlayerFactory {
      * [OfflineContentProvider], downloaded videos play from the downloads
      * cache and everything else streams.
      */
-    fun create(context: Context): ExoPlayer {
+    fun create(context: Context, provider: OfflineContentProvider? = PlaybackEnvironment.offlineProvider): ExoPlayer {
         val trackSelector = DefaultTrackSelector(context).apply {
             parameters = DefaultTrackSelector.Parameters.Builder(context)
                 .setExceedVideoConstraintsIfNecessary(true)
                 .build()
         }
-        val mediaSourceFactory = PlaybackEnvironment.offlineProvider
+        val mediaSourceFactory = provider
             ?.let { RoutingMediaSourceFactory(context, it, streamingDataSourceFactory(context)) }
             ?: DefaultMediaSourceFactory(streamingDataSourceFactory(context))
         return ExoPlayer.Builder(context)

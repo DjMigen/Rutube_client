@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import ru.rutubeclient.core.database.AppDatabase
 import ru.rutubeclient.core.database.LibraryRepository
+import ru.rutubeclient.core.network.HttpRuTubeApi
 import ru.rutubeclient.core.network.RuTubeApi
 
 class TvApp : Application() {
@@ -23,7 +24,7 @@ class TvApp : Application() {
 }
 
 class TvAppContainer(context: Context) {
-    val api = RuTubeApi()
+    val api = HttpRuTubeApi()
     val db = AppDatabase.get(context)
     val repository = LibraryRepository(db)
 }

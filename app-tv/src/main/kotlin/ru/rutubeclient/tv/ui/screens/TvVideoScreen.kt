@@ -68,6 +68,8 @@ import ru.rutubeclient.core.model.VideoDetails
 import ru.rutubeclient.core.model.normalizeSeriesTitle
 import ru.rutubeclient.core.model.parseSeriesInfo
 import ru.rutubeclient.core.network.RuTubeApi
+import ru.rutubeclient.core.network.SeriesDiscovery
+import ru.rutubeclient.core.network.VideoSession
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.QualityController
 import ru.rutubeclient.core.player.QualityOption
@@ -111,20 +113,36 @@ class TvVideoViewModel(
     fun load() {
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            runCatching { api.getVideo(videoId) }
-                .onSuccess { details ->
+            runCatching { VideoSession(api).load(videoId) }
+                .onSuccess { loaded ->
+                    val details = loaded.details
                     val history = repository.getHistoryEntry(videoId)
                     _state.update {
                         it.copy(
                             details = details,
+                            streamUrl = loaded.streamUrl,
+                            streamVersion = it.streamVersion + 1,
                             startPositionMs = if (startFromBeginning) 0L else history?.positionMs ?: 0L,
                             nextVideoId = this@TvVideoViewModel.nextVideoId,
                             rating = repository.getRating(videoId),
                             isLoading = false,
                         )
                     }
-                    resolveStream()
-                    discoverSeries(details)
+                    if (this@TvVideoViewModel.nextVideoId == null) {
+                        viewModelScope.launch {
+                            SeriesDiscovery(api).discover(details, videoId, null, true)
+                                ?.let { result ->
+                                    _state.update {
+                                        it.copy(
+                                            seriesEpisodes = result.seriesEpisodes,
+                                            seriesSeasons = result.seriesSeasons,
+                                            selectedSeriesSeason = result.selectedSeriesSeason,
+                                            nextVideoId = result.nextVideoId ?: it.nextVideoId,
+                                        )
+                                    }
+                                }
+                        }
+                    }
                 }
                 .onFailure { e ->
                     _state.update {
@@ -135,10 +153,10 @@ class TvVideoViewModel(
     }
 
     private suspend fun resolveStream() {
-        runCatching { api.getStreamInfo(videoId) }
-            .onSuccess { info ->
+        runCatching { VideoSession(api).resolveStream(videoId) }
+            .onSuccess { url ->
                 _state.update {
-                    it.copy(streamUrl = info.hlsUrl, streamVersion = it.streamVersion + 1)
+                    it.copy(streamUrl = url, streamVersion = it.streamVersion + 1)
                 }
             }
             .onFailure { e ->
@@ -153,7 +171,7 @@ class TvVideoViewModel(
     fun savePosition(positionMs: Long) {
         val details = _state.value.details ?: return
         if (positionMs <= 0L) return
-        ioScope.launch { repository.savePosition(details, positionMs) }
+        ioScope.launch { VideoSession(api).savePosition(repository, details, positionMs) }
     }
 
     fun toggleBookmark() {
@@ -193,81 +211,6 @@ class TvVideoViewModel(
         viewModelScope.launch {
             repository.isBookmarked(videoId).collect { bookmarked ->
                 _state.update { it.copy(isBookmarked = bookmarked) }
-            }
-        }
-    }
-
-    private fun discoverSeries(details: VideoDetails) {
-        viewModelScope.launch {
-            // If already provided by a catalog/TV show, nothing to discover.
-            if (this@TvVideoViewModel.nextVideoId != null) return@launch
-
-            val tvShowId = details.tvShowId
-            if (tvShowId != null) {
-                val season = details.season ?: 1
-                runCatching { api.getTvShowVideos(tvShowId, 1, season) }
-                    .onSuccess { page ->
-                        val episodes = page.items
-                            .filter { it.id != videoId }
-                            .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
-                        if (episodes.isNotEmpty()) {
-                            val next = episodes.firstOrNull { parseSeriesInfo(it.title)?.episode != null }?.id
-                            _state.update {
-                                it.copy(
-                                    seriesEpisodes = episodes,
-                                    seriesSeasons = listOf(season),
-                                    selectedSeriesSeason = season,
-                                    nextVideoId = next ?: it.nextVideoId,
-                                )
-                            }
-                        }
-                    }
-                return@launch
-            }
-
-            val currentInfo = parseSeriesInfo(details.title) ?: return@launch
-            val baseNorm = normalizeSeriesTitle(currentInfo.baseTitle)
-            if (baseNorm.length < 3) return@launch
-
-            val authorId = details.author?.id ?: return@launch
-            val candidatePool = mutableListOf<Video>()
-            for (page in 1..3) {
-                runCatching { api.getChannelVideos(authorId, page) }
-                    .onSuccess { p -> candidatePool += p.items }
-            }
-            runCatching { api.searchVideos(currentInfo.baseTitle, 1) }
-                .onSuccess { p ->
-                    candidatePool += p.items.filter { it.author?.id == authorId }
-                }
-
-            val candidates = candidatePool
-                .distinctBy { it.id }
-                .filter { v ->
-                    v.id != videoId && parseSeriesInfo(v.title)?.let { info ->
-                        normalizeSeriesTitle(info.baseTitle) == baseNorm
-                    } == true
-                }
-
-            if (candidates.isEmpty()) return@launch
-            val seasons = candidates.mapNotNull { parseSeriesInfo(it.title)?.season ?: it.season }
-                .distinct().sorted()
-                .ifEmpty { listOf(1) }
-            val currentSeason = currentInfo.season ?: candidates.firstOrNull()?.let { parseSeriesInfo(it.title)?.season } ?: 1
-            val currentEpisode = currentInfo.episode ?: 0
-            val seasonCandidates = candidates.filter { (parseSeriesInfo(it.title)?.season ?: it.season ?: 1) == currentSeason }
-            val sortedEpisodes = seasonCandidates
-                .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
-            val nextId = sortedEpisodes
-                .firstOrNull { (parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE) > currentEpisode }
-                ?.id
-
-            _state.update {
-                it.copy(
-                    seriesEpisodes = candidates.sortedBy { v -> parseSeriesInfo(v.title)?.episode ?: Int.MAX_VALUE },
-                    seriesSeasons = seasons,
-                    selectedSeriesSeason = currentSeason,
-                    nextVideoId = nextId ?: it.nextVideoId,
-                )
             }
         }
     }

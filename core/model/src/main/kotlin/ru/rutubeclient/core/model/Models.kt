@@ -161,3 +161,19 @@ data class StreamInfo(
     val hlsUrl: String,
     val isLive: Boolean,
 )
+
+/** A catalog grid entry: either a structured TV show or a plain video. */
+sealed interface CatalogEntry {
+    data class Show(val show: TvShow) : CatalogEntry
+    data class Video(val video: ru.rutubeclient.core.model.Video) : CatalogEntry
+}
+
+/** Catalog tab shared by mobile and TV. */
+enum class CatalogTab(val label: String) {
+    ALL("Все"),
+    SERIES("Сериалы"),
+    TV_SHOWS("ТВ-шоу"),
+    MOVIES("Фильмы"),
+    CARTOONS("Мультики"),
+    ANIME("Аниме"),
+}

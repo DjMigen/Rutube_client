@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import ru.rutubeclient.core.model.CatalogEntry
+import ru.rutubeclient.core.model.CatalogTab
 import ru.rutubeclient.core.model.TvShow
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
@@ -138,11 +140,11 @@ fun CatalogScreen(
                     key = { index, item -> "${item.stableId}_$index" },
                 ) { _, item ->
                     when (item) {
-                        is CatalogItem.Show -> TvShowCard(
+                        is CatalogEntry.Show -> TvShowCard(
                             show = item.show,
                             onClick = { onTvShowClick(item.show.id) },
                         )
-                        is CatalogItem.Video -> VideoCard(
+                        is CatalogEntry.Video -> VideoCard(
                             video = item.video,
                             onClick = { onVideoClick(item.video.id) },
                         )
@@ -233,8 +235,8 @@ private fun buildTvShowMeta(show: TvShow): String {
     }
 }
 
-private val CatalogItem.stableId: String
+private val CatalogEntry.stableId: String
     get() = when (this) {
-        is CatalogItem.Show -> "show_${show.id}"
-        is CatalogItem.Video -> "video_${video.id}"
+        is CatalogEntry.Show -> "show_${show.id}"
+        is CatalogEntry.Video -> "video_${video.id}"
     }

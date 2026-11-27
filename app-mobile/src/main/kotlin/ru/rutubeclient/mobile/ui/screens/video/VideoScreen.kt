@@ -92,6 +92,7 @@ import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.QualityController
 import ru.rutubeclient.core.player.QualityOption
+import ru.rutubeclient.mobile.App
 import ru.rutubeclient.mobile.player.CastManager
 import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
@@ -121,7 +122,7 @@ fun VideoScreen(
 
     // Local ExoPlayer for this screen. Using a screen-local player avoids
     // surface lifecycle issues when switching episodes through navigation.
-    val player = remember { PlayerFactory.create(context) }
+    val player = remember { PlayerFactory.create(context, App.container(context).downloadsManager) }
 
     // Attach the freshly resolved stream to the player.
     var appliedStreamVersion by remember { mutableIntStateOf(-1) }

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import ru.rutubeclient.core.database.AppDatabase
 import ru.rutubeclient.core.database.LibraryRepository
+import ru.rutubeclient.core.network.HttpRuTubeApi
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.core.player.PlaybackEnvironment
 import ru.rutubeclient.mobile.download.DownloadsManager
@@ -46,7 +47,7 @@ class App : Application() {
 
 /** Manual dependency injection — the whole graph is tiny, no framework needed. */
 class AppContainer(context: Context) {
-    val api = RuTubeApi()
+    val api = HttpRuTubeApi()
     val db = AppDatabase.get(context)
     val repository = LibraryRepository(db)
     val downloadsManager = DownloadsManager(context.applicationContext, api, repository)

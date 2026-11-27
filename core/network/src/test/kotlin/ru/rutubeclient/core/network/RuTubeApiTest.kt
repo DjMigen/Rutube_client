@@ -25,7 +25,7 @@ class RuTubeApiTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        api = RuTubeApi(baseUrl = server.url("/").toString().removeSuffix("/"))
+        api = HttpRuTubeApi(baseUrl = server.url("/").toString().removeSuffix("/"))
     }
 
     @After

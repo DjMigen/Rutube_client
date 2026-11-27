@@ -21,47 +21,61 @@ class RuTubeApiException(val code: Int, message: String) : Exception(message)
 class StreamUnavailableException(message: String) : Exception(message)
 
 /**
- * Client for RuTube's internal (website) API. All endpoints were verified
- * against the live service. Streams are served as signed, short-lived HLS
- * master-playlist URLs: always call [getStreamInfo] right before playback
- * and again when the CDN starts answering 403 (signature expired).
- *
- * Ads are delivered to the official player through the "advert" field of
- * play/options (AdFox VAST tags). This client never requests those tags,
- * so no ads are ever loaded.
+ * Port for RuTube's internal (website) API. Production uses [HttpRuTubeApi];
+ * tests can supply an in-memory implementation.
  */
-class RuTubeApi(
+interface RuTubeApi {
+    suspend fun getHomeFeed(page: Int = 1): Page<Video>
+    suspend fun getCategories(): List<VideoCategory>
+    suspend fun getTvShows(page: Int = 1): Page<TvShow>
+    suspend fun getTvShow(id: Int): TvShow
+    suspend fun getTvShowSeasons(tvId: Int): List<Int>
+    suspend fun getTvShowVideos(tvId: Int, page: Int = 1, season: Int? = null): Page<Video>
+    suspend fun getTopMovies(page: Int = 1): Page<Video>
+    suspend fun getTopSerials(page: Int = 1): Page<Video>
+    suspend fun getTopCartoons(page: Int = 1): Page<Video>
+    suspend fun getTopAnime(page: Int = 1): Page<Video>
+    suspend fun getCategoryVideos(categoryId: Int, page: Int = 1): Page<Video>
+    suspend fun searchVideos(query: String, page: Int = 1): Page<Video>
+    suspend fun getVideo(id: String): VideoDetails
+    suspend fun getStreamInfo(id: String): StreamInfo
+    suspend fun getComments(videoId: String, page: Int = 1): Page<Comment>
+    suspend fun getChannelVideos(authorId: Long, page: Int = 1): Page<Video>
+}
+
+/**
+ * HTTP implementation of [RuTubeApi]. All endpoints were verified against the
+ * live service. Streams are served as signed, short-lived HLS master-playlist
+ * URLs: always call [getStreamInfo] right before playback and again when the
+ * CDN starts answering 403 (signature expired).
+ */
+class HttpRuTubeApi(
     private val client: OkHttpClient = defaultClient(),
     private val baseUrl: String = BASE_URL,
-) {
+) : RuTubeApi {
     private val json = Json {
         ignoreUnknownKeys = true
         coerceInputValues = true
     }
 
-    /** Main recommendation feed ("Главная"). */
-    suspend fun getHomeFeed(page: Int = 1): Page<Video> =
+    override suspend fun getHomeFeed(page: Int): Page<Video> =
         getPage("/api/v2/video/recommendation/main?page=$page") { it: VideoDto -> it.toModel() }
 
-    /** All video categories for the category browser. */
-    suspend fun getCategories(): List<VideoCategory> = withContext(Dispatchers.IO) {
+    override suspend fun getCategories(): List<VideoCategory> = withContext(Dispatchers.IO) {
         val body = get("/api/video/category/")
         json.decodeFromString<List<CategoryListItemDto>>(body)
             .map { VideoCategory(it.id, it.name) }
             .filter { it.name.isNotBlank() }
     }
 
-    /** Structured catalog of TV shows and series. */
-    suspend fun getTvShows(page: Int = 1): Page<TvShow> =
+    override suspend fun getTvShows(page: Int): Page<TvShow> =
         getPage("/api/metainfo/tv/?page=$page") { it: TvShowDto -> it.toModel() }
 
-    /** Details of one TV show / series. */
-    suspend fun getTvShow(id: Int): TvShow = withContext(Dispatchers.IO) {
+    override suspend fun getTvShow(id: Int): TvShow = withContext(Dispatchers.IO) {
         json.decodeFromString<TvShowDto>(get("/api/metainfo/tv/$id/")).toModel()
     }
 
-    /** Seasons available for a TV show / series. */
-    suspend fun getTvShowSeasons(tvId: Int): List<Int> = withContext(Dispatchers.IO) {
+    override suspend fun getTvShowSeasons(tvId: Int): List<Int> = withContext(Dispatchers.IO) {
         runCatching {
             json.decodeFromString<List<TvShowSeasonDto>>(get("/api/metainfo/tv/$tvId/season"))
                 .map { it.number }
@@ -70,8 +84,7 @@ class RuTubeApi(
         }.getOrDefault(emptyList())
     }
 
-    /** Episodes (videos) of a TV show / series. */
-    suspend fun getTvShowVideos(tvId: Int, page: Int = 1, season: Int? = null): Page<Video> {
+    override suspend fun getTvShowVideos(tvId: Int, page: Int, season: Int?): Page<Video> {
         val path = if (season == null) {
             "/api/metainfo/tv/$tvId/video?page=$page"
         } else {
@@ -80,40 +93,29 @@ class RuTubeApi(
         return getPage(path) { it: VideoDto -> it.toModel() }
     }
 
-    /** Curated top movies from the "Кино и сериалы" feed. */
-    suspend fun getTopMovies(page: Int = 1): Page<Video> =
+    override suspend fun getTopMovies(page: Int): Page<Video> =
         getPage("/api/v2/video/recommendation/main/top_movie?limit=20&page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Curated top serials from the "Кино и сериалы" feed. */
-    suspend fun getTopSerials(page: Int = 1): Page<Video> =
+    override suspend fun getTopSerials(page: Int): Page<Video> =
         getPage("/api/v2/video/recommendation/main/top_serial?show_hidden_videos=False&limit=20&page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Curated top cartoons from the "Кино и сериалы" feed. */
-    suspend fun getTopCartoons(page: Int = 1): Page<Video> =
+    override suspend fun getTopCartoons(page: Int): Page<Video> =
         getPage("/api/v2/video/recommendation/main/top_cartoon?limit=20&page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Curated top anime from the "Кино и сериалы" feed. */
-    suspend fun getTopAnime(page: Int = 1): Page<Video> =
+    override suspend fun getTopAnime(page: Int): Page<Video> =
         getPage("/api/v2/video/recommendation/main/top_anime?limit=20&page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Videos of one category. */
-    suspend fun getCategoryVideos(categoryId: Int, page: Int = 1): Page<Video> =
+    override suspend fun getCategoryVideos(categoryId: Int, page: Int): Page<Video> =
         getPage("/api/video/category/$categoryId/?page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Video search. */
-    suspend fun searchVideos(query: String, page: Int = 1): Page<Video> =
+    override suspend fun searchVideos(query: String, page: Int): Page<Video> =
         getPage("/api/search/video/?query=${query.urlEncoded()}&page=$page") { it: VideoDto -> it.toModel() }
 
-    /** Full details of one video. */
-    suspend fun getVideo(id: String): VideoDetails = withContext(Dispatchers.IO) {
+    override suspend fun getVideo(id: String): VideoDetails = withContext(Dispatchers.IO) {
         json.decodeFromString<VideoDetailsDto>(get("/api/video/$id/")).toModel()
     }
 
-    /**
-     * Resolves the playable HLS master-playlist URL. The URL is signed and
-     * short-lived; do not cache it for later sessions.
-     */
-    suspend fun getStreamInfo(id: String): StreamInfo = withContext(Dispatchers.IO) {
+    override suspend fun getStreamInfo(id: String): StreamInfo = withContext(Dispatchers.IO) {
         val dto = json.decodeFromString<PlayOptionsDto>(get("/api/play/options/$id/?format=json"))
         val url = dto.videoBalancer.m3u8 ?: dto.videoBalancer.default
         if (url.isNullOrBlank()) {
@@ -122,12 +124,10 @@ class RuTubeApi(
         StreamInfo(hlsUrl = url, isLive = false)
     }
 
-    /** Comments under a video. */
-    suspend fun getComments(videoId: String, page: Int = 1): Page<Comment> =
+    override suspend fun getComments(videoId: String, page: Int): Page<Comment> =
         getPage("/api/comments/video/$videoId/?page=$page") { it: CommentDto -> it.toModel() }
 
-    /** Videos published by a channel (author). */
-    suspend fun getChannelVideos(authorId: Long, page: Int = 1): Page<Video> =
+    override suspend fun getChannelVideos(authorId: Long, page: Int): Page<Video> =
         getPage("/api/video/person/$authorId/?page=$page") { it: VideoDto -> it.toModel() }
 
     private suspend inline fun <reified T, R> getPage(
