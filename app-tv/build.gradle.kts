@@ -20,8 +20,8 @@ android {
         applicationId = "ru.rutubeclient.tv"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.3.1"
+        versionCode = 5
+        versionName = "1.5.2"
     }
 
     signingConfigs {
