@@ -7,6 +7,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.util.Rational
+import android.view.LayoutInflater
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -68,6 +69,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +94,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import ru.rutubeclient.mobile.R
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.QualityController
@@ -132,6 +135,7 @@ fun VideoScreen(
 
     // Attach the freshly resolved stream to the player.
     var appliedStreamVersion by remember { mutableIntStateOf(-1) }
+    var appliedController by remember { mutableStateOf<MediaController?>(null) }
     LaunchedEffect(controller, state.streamVersion, state.streamUrl) {
         val c = controller ?: return@LaunchedEffect
         val url = state.streamUrl ?: return@LaunchedEffect
@@ -351,34 +355,43 @@ fun VideoScreen(
                     modifier = if (isFullscreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth(),
                 ) {
                     Box(Modifier.fillMaxSize()) {
-                        AndroidView(
-                            factory = { ctx ->
-                                PlayerView(ctx).apply {
-                                    useController = true
-                                    setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
-                                    setControllerVisibilityListener(
-                                        PlayerView.ControllerVisibilityListener { visibility ->
-                                            controllerVisible = visibility == View.VISIBLE
+                        key(viewModel.videoId) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    (LayoutInflater.from(ctx)
+                                        .inflate(R.layout.player_view, null, false) as PlayerView)
+                                        .apply {
+                                            useController = true
+                                            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                                            setControllerVisibilityListener(
+                                                PlayerView.ControllerVisibilityListener { visibility ->
+                                                    controllerVisible = visibility == View.VISIBLE
+                                                }
+                                            )
+                                            controller?.let { player = it }
                                         }
-                                    )
-                                }
-                            },
-                            update = { view ->
-                                view.player = controller
-                                view.resizeMode = if (isFullscreen) {
-                                    AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                },
+                                update = { view ->
+                                    if (appliedController != controller) {
+                                        appliedController?.let { view.player = null }
+                                        controller?.let { view.player = it }
+                                        appliedController = controller
+                                    }
+                                    view.resizeMode = if (isFullscreen) {
+                                        AspectRatioFrameLayout.RESIZE_MODE_FILL
+                                    } else {
+                                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                    }
+                                },
+                                modifier = if (isFullscreen) {
+                                    Modifier.fillMaxSize()
                                 } else {
-                                    AspectRatioFrameLayout.RESIZE_MODE_FIT
-                                }
-                            },
-                            modifier = if (isFullscreen) {
-                                Modifier.fillMaxSize()
-                            } else {
-                                Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(16f / 9f)
-                            },
-                        )
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(16f / 9f)
+                                },
+                            )
+                        }
                         if (controllerVisible) {
                             IconButton(
                                 onClick = {
