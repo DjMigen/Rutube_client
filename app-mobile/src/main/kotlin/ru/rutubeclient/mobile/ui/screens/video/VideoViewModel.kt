@@ -312,18 +312,20 @@ class VideoViewModel(
             val baseNorm = normalizeSeriesTitle(currentInfo.baseTitle)
             if (baseNorm.length < 3) return@launch
 
-            val authorId = details.author?.id
+            val authorId = details.author?.id ?: return@launch
             val candidatePool = mutableListOf<ru.rutubeclient.core.model.Video>()
 
-            if (authorId != null) {
-                runCatching { api.getChannelVideos(authorId, 1) }
-                    .onSuccess { page -> candidatePool += page.items }
-                runCatching { api.getChannelVideos(authorId, 2) }
-                    .onSuccess { page -> candidatePool += page.items }
+            // Videos from the same channel (multiple pages).
+            for (page in 1..3) {
+                runCatching { api.getChannelVideos(authorId, page) }
+                    .onSuccess { p -> candidatePool += p.items }
             }
 
+            // Search fallback, but only keep results from the same channel.
             runCatching { api.searchVideos(currentInfo.baseTitle, 1) }
-                .onSuccess { page -> candidatePool += page.items }
+                .onSuccess { p ->
+                    candidatePool += p.items.filter { it.author?.id == authorId }
+                }
 
             val candidates = candidatePool
                 .distinctBy { it.id }
@@ -340,11 +342,22 @@ class VideoViewModel(
                 .ifEmpty { listOf(1) }
 
             val currentSeason = currentInfo.season ?: candidates.firstOrNull()?.let { parseSeriesInfo(it.title)?.season } ?: 1
+            val seasonCandidates = candidates.filter { v ->
+                val s = parseSeriesInfo(v.title)?.season ?: v.season ?: 1
+                s == currentSeason
+            }
+            val currentEpisode = currentInfo.episode
+            val nextId = seasonCandidates
+                .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+                .firstOrNull { (parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE) > (currentEpisode ?: 0) }
+                ?.id
+
             _state.update {
                 it.copy(
                     seriesEpisodes = candidates,
                     seriesSeasons = seasons,
                     selectedSeriesSeason = currentSeason,
+                    nextVideoId = nextId ?: it.nextVideoId,
                 )
             }
         }
