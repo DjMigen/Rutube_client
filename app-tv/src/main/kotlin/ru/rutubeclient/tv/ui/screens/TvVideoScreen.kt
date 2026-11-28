@@ -212,6 +212,8 @@ fun TvVideoScreen(
     var isPlaying by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var scrubbingMs by remember { mutableStateOf<Float?>(null) }
+    var interactionTick by remember { mutableIntStateOf(0) }
     var showQualityPicker by remember { mutableStateOf(false) }
     var selectedQualityHeight by remember { mutableIntStateOf(0) }
     var showTextPicker by remember { mutableStateOf(false) }
@@ -267,8 +269,8 @@ fun TvVideoScreen(
         }
     }
 
-    // Auto-hide controls.
-    LaunchedEffect(controlsVisible) {
+    // Auto-hide controls after a period of inactivity (any key press resets it).
+    LaunchedEffect(controlsVisible, interactionTick) {
         if (controlsVisible) {
             delay(4000)
             if (isPlaying && !showQualityPicker) controlsVisible = false
@@ -282,6 +284,15 @@ fun TvVideoScreen(
             boxFocusRequester.requestFocus()
         }
     }
+
+    // When a picker (quality/audio/subtitles) closes, its focused button is gone —
+    // return focus to the transport controls or D-pad navigation dies.
+    LaunchedEffect(showQualityPicker, showAudioPicker, showTextPicker) {
+        if (!showQualityPicker && !showAudioPicker && !showTextPicker) {
+            pauseFocusRequester.requestFocus()
+        }
+    }
+
     androidx.activity.compose.BackHandler { onBack() }
 
     Box(
@@ -292,6 +303,7 @@ fun TvVideoScreen(
             .focusable()
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                interactionTick++
                 // Dedicated media keys on the remote (play/pause, rewind, fast-forward, next/prev).
                 when (event.key) {
                     Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
@@ -326,13 +338,14 @@ fun TvVideoScreen(
                     }
                     else -> { }
                 }
-                // When controls are visible, let focus move between the overlay buttons.
-                // Down hides them so the user can seek again.
+                // Back navigates away (the BackHandler below does it). We don't
+                // intercept it here — keep the behavior predictable.
+                if (event.key == Key.Back) {
+                    return@onKeyEvent false
+                }
+                // When controls are visible, let focus move between the overlay
+                // buttons, the timeline and the series row (no hidden seek shortcut).
                 if (controlsVisible) {
-                    if (event.key == Key.DirectionDown) {
-                        controlsVisible = false
-                        return@onKeyEvent true
-                    }
                     return@onKeyEvent false
                 }
                 when (event.key) {
@@ -396,12 +409,18 @@ fun TvVideoScreen(
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
                     )
                     Spacer(Modifier.width(12.dp))
-                    androidx.compose.material3.LinearProgressIndicator(
-                        progress = {
-                            if (durationMs > 0) {
-                                (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                            } else 0f
+                    androidx.compose.material3.Slider(
+                        value = scrubbingMs
+                            ?: positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
+                        onValueChange = { scrubbingMs = it },
+                        onValueChangeFinished = {
+                            scrubbingMs?.let { target ->
+                                player.seekTo(target.toLong())
+                                positionMs = target.toLong()
+                            }
+                            scrubbingMs = null
                         },
+                        valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(12.dp))
