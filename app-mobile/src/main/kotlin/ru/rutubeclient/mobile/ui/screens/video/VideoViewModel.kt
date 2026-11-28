@@ -253,7 +253,20 @@ class VideoViewModel(
     }
 
     fun selectSeriesSeason(season: Int) {
+        val current = _state.value
+        if (current.selectedSeriesSeason == season) return
         _state.update { it.copy(selectedSeriesSeason = season) }
+        // Catalog series: reload episodes for the chosen season.
+        current.details?.tvShowId?.let { tvShowId ->
+            viewModelScope.launch {
+                runCatching { api.getTvShowVideos(tvShowId, 1, season) }
+                    .onSuccess { page ->
+                        _state.update {
+                            it.copy(seriesEpisodes = page.items.filter { v -> v.id != videoId })
+                        }
+                    }
+            }
+        }
     }
 
 }

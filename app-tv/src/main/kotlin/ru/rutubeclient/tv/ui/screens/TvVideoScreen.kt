@@ -1,6 +1,7 @@
 package ru.rutubeclient.tv.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -191,7 +194,20 @@ class TvVideoViewModel(
     }
 
     fun selectSeriesSeason(season: Int) {
+        val current = _state.value
+        if (current.selectedSeriesSeason == season) return
         _state.update { it.copy(selectedSeriesSeason = season) }
+        // Catalog series: reload episodes for the chosen season.
+        current.details?.tvShowId?.let { tvShowId ->
+            viewModelScope.launch {
+                runCatching { api.getTvShowVideos(tvShowId, 1, season) }
+                    .onSuccess { page ->
+                        _state.update {
+                            it.copy(seriesEpisodes = page.items.filter { v -> v.id != videoId })
+                        }
+                    }
+            }
+        }
     }
 }
 
@@ -212,7 +228,7 @@ fun TvVideoScreen(
     var isPlaying by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
-    var scrubbingMs by remember { mutableStateOf<Float?>(null) }
+    var timelineFocused by remember { mutableStateOf(false) }
     var interactionTick by remember { mutableIntStateOf(0) }
     var showQualityPicker by remember { mutableStateOf(false) }
     var selectedQualityHeight by remember { mutableIntStateOf(0) }
@@ -399,6 +415,7 @@ fun TvVideoScreen(
                 androidx.tv.material3.Text(
                     state.details?.title.orEmpty(),
                     style = androidx.tv.material3.MaterialTheme.typography.titleMedium,
+                    color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -407,26 +424,60 @@ fun TvVideoScreen(
                     androidx.tv.material3.Text(
                         formatMs(positionMs),
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                        color = Color.White,
                     )
                     Spacer(Modifier.width(12.dp))
-                    androidx.compose.material3.Slider(
-                        value = scrubbingMs
-                            ?: positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
-                        onValueChange = { scrubbingMs = it },
-                        onValueChangeFinished = {
-                            scrubbingMs?.let { target ->
-                                player.seekTo(target.toLong())
-                                positionMs = target.toLong()
+                    // Seekable timeline: focus it, then Left/Right scrubs (±15s).
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                            .focusable()
+                            .onFocusChanged { timelineFocused = it.isFocused }
+                            .onKeyEvent { e ->
+                                if (e.type != KeyEventType.KeyDown) return@onKeyEvent false
+                                when (e.key) {
+                                    Key.DirectionLeft -> {
+                                        val target =
+                                            (player.currentPosition - 15_000L)
+                                                .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                        player.seekTo(target)
+                                        positionMs = target
+                                        true
+                                    }
+                                    Key.DirectionRight -> {
+                                        val target =
+                                            (player.currentPosition + 15_000L)
+                                                .coerceIn(0L, durationMs.coerceAtLeast(0L))
+                                        player.seekTo(target)
+                                        positionMs = target
+                                        true
+                                    }
+                                    else -> false
+                                }
                             }
-                            scrubbingMs = null
-                        },
-                        valueRange = 0f..durationMs.toFloat().coerceAtLeast(1f),
-                        modifier = Modifier.weight(1f),
-                    )
+                            .border(
+                                width = 2.dp,
+                                color = if (timelineFocused) Color.White else Color.Transparent,
+                                shape = RoundedCornerShape(6.dp),
+                            )
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = {
+                                if (durationMs > 0) {
+                                    (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                                } else 0f
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Spacer(Modifier.width(12.dp))
                     androidx.tv.material3.Text(
                         formatMs(durationMs),
                         style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
+                        color = Color.White,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -537,40 +588,42 @@ fun TvVideoScreen(
                     episodesForSeason(state.seriesEpisodes, selectedSeason)
                 }
                 if (seriesEpisodesForSeason.isNotEmpty()) {
-                    Spacer(Modifier.height(16.dp))
-                    if (seriesSeasons.size > 1) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            seriesSeasons.forEach { season ->
-                                androidx.tv.material3.Button(onClick = { viewModel.selectSeriesSeason(season) }) {
-                                    androidx.tv.material3.Text(
-                                        if (season == selectedSeason) "• $season сезон"
-                                        else "$season сезон"
-                                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.tv.material3.Text(
+                            "Серии",
+                            style = androidx.tv.material3.MaterialTheme.typography.titleSmall,
+                            color = Color.White,
+                        )
+                        if (seriesSeasons.size > 1) {
+                            Spacer(Modifier.width(12.dp))
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                items(seriesSeasons) { season ->
+                                    androidx.tv.material3.Button(onClick = { viewModel.selectSeriesSeason(season) }) {
+                                        androidx.tv.material3.Text(
+                                            if (season == selectedSeason) "• $season сезон"
+                                            else "$season сезон"
+                                        )
+                                    }
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
                     }
-                    androidx.tv.material3.Text(
-                        "Серии",
-                        style = androidx.tv.material3.MaterialTheme.typography.titleSmall,
-                    )
                     Spacer(Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(seriesEpisodesForSeason, key = { it.id }) { video ->
                             val episode = episodeOf(video)
                             androidx.tv.material3.Button(onClick = { onVideoClick(video.id) }) {
-                                Column {
-                                    androidx.tv.material3.Text(
-                                        "${episode ?: video.title} серия",
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    androidx.tv.material3.Text(
-                                        formatMs(video.durationSec * 1000L),
-                                        style = androidx.tv.material3.MaterialTheme.typography.labelSmall,
-                                    )
-                                }
+                                androidx.tv.material3.Text(
+                                    "${episode ?: video.title} серия • ${formatMs(video.durationSec * 1000L)}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }

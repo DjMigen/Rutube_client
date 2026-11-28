@@ -35,6 +35,11 @@ class SeriesDiscovery(private val api: RuTubeApi) {
         val tvShowId = details.tvShowId
         if (tvShowId != null) {
             val season = details.season ?: 1
+            // All seasons of the show, so the season selector is complete.
+            val allSeasons = runCatching { api.getTvShowSeasons(tvShowId) }
+                .getOrNull()
+                .orEmpty()
+                .ifEmpty { listOf(season) }
             return runCatching { api.getTvShowVideos(tvShowId, 1, season) }
                 .getOrNull()
                 ?.let { page ->
@@ -42,7 +47,7 @@ class SeriesDiscovery(private val api: RuTubeApi) {
                     if (episodes.isEmpty()) null
                     else Result(
                         seriesEpisodes = episodes,
-                        seriesSeasons = listOf(season),
+                        seriesSeasons = allSeasons,
                         selectedSeriesSeason = season,
                         nextVideoId = passedNextVideoId,
                     )

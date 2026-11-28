@@ -110,28 +110,10 @@ fun TvSearchScreen(
     val searchFieldFocus = remember { FocusRequester() }
     val firstResultFocus = remember { FocusRequester() }
 
-    LaunchedEffect(state.results) {
-        if (state.results.isNotEmpty()) {
-            kotlinx.coroutines.delay(150)
-            runCatching { firstResultFocus.requestFocus() }
-        }
-    }
-
     Column(
         Modifier
             .fillMaxSize()
             .padding(24.dp)
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown &&
-                    event.key == Key.DirectionDown &&
-                    state.results.isNotEmpty()
-                ) {
-                    runCatching { firstResultFocus.requestFocus() }
-                    true
-                } else {
-                    false
-                }
-            }
     ) {
         androidx.tv.material3.Text(
             "Поиск",
@@ -143,7 +125,19 @@ fun TvSearchScreen(
             onValueChange = viewModel::onQueryChange,
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(searchFieldFocus),
+                .focusRequester(searchFieldFocus)
+                .onPreviewKeyEvent { event ->
+                    // Down from the search field moves focus to the first result.
+                    if (event.type == KeyEventType.KeyDown &&
+                        event.key == Key.DirectionDown &&
+                        state.results.isNotEmpty()
+                    ) {
+                        runCatching { firstResultFocus.requestFocus() }
+                        true
+                    } else {
+                        false
+                    }
+                },
             placeholder = { androidx.compose.material3.Text("Поиск видео…") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -163,22 +157,29 @@ fun TvSearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                            runCatching { searchFieldFocus.requestFocus() }
-                            true
-                        } else {
-                            false
-                        }
-                    },
+                modifier = Modifier.fillMaxSize(),
             ) {
                 gridItemsIndexed(state.results, key = { index, video -> "${video.id}_$index" }) { index, video ->
                     TvVideoCard(
                         video = video,
                         onClick = { onVideoClick(video.id) },
-                        modifier = if (index == 0) Modifier.focusRequester(firstResultFocus) else Modifier,
+                        modifier = if (index == 0) {
+                            Modifier
+                                .focusRequester(firstResultFocus)
+                                .onKeyEvent { event ->
+                                    // Up from the first card returns to the search field.
+                                    if (event.type == KeyEventType.KeyDown &&
+                                        event.key == Key.DirectionUp
+                                    ) {
+                                        runCatching { searchFieldFocus.requestFocus() }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                        } else {
+                            Modifier
+                        },
                     )
                 }
             }
