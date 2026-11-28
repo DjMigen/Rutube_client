@@ -411,6 +411,7 @@ fun TvVideoScreen(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
+                // Transport + navigation (most-used actions, first row).
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -441,6 +442,13 @@ fun TvVideoScreen(
                             androidx.tv.material3.Text("Следующая серия")
                         }
                     }
+                }
+                // Secondary actions (second row, so nothing overflows the screen width).
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
                     if (pb.audioLanguages.isNotEmpty()) {
                         androidx.tv.material3.Button(onClick = { showAudioPicker = !showAudioPicker }) {
                             androidx.tv.material3.Text("Аудио")
@@ -499,13 +507,6 @@ fun TvVideoScreen(
                             imageVector = if (state.rating?.liked == false) Icons.Default.ThumbDown else Icons.Default.ThumbDownOffAlt,
                             contentDescription = null,
                             tint = androidx.tv.material3.MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                    if (state.details?.author != null) {
-                        androidx.tv.material3.Text(
-                            state.details?.author?.name.orEmpty(),
-                            style = androidx.tv.material3.MaterialTheme.typography.labelMedium,
-                            color = androidx.tv.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
