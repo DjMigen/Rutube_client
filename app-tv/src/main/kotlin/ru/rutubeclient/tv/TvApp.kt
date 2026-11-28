@@ -2,10 +2,14 @@ package ru.rutubeclient.tv
 
 import android.app.Application
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import ru.rutubeclient.core.database.AppDatabase
 import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.network.HttpRuTubeApi
 import ru.rutubeclient.core.network.RuTubeApi
+import ru.rutubeclient.core.player.PlayerFactory
 
 class TvApp : Application() {
 
@@ -15,6 +19,7 @@ class TvApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = TvAppContainer(this)
+        CoroutineScope(Dispatchers.IO).launch { PlayerFactory.warmUp(this@TvApp) }
     }
 
     companion object {

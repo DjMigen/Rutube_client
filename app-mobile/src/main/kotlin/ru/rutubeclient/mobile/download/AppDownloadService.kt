@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.scheduler.PlatformScheduler
 import androidx.media3.exoplayer.scheduler.Scheduler
 import ru.rutubeclient.mobile.App
 import ru.rutubeclient.mobile.MainActivity
+import ru.rutubeclient.mobile.R
 
 /** Foreground service that performs the actual HLS downloads with a progress notification. */
 @OptIn(UnstableApi::class)
@@ -38,11 +39,14 @@ class AppDownloadService : DownloadService(ServiceInfo.FOREGROUND_SERVICE_TYPE_D
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // NB: the 2nd arg is the small-icon drawable and the 4th is a
+        // user-facing content description. Passing the notification id / channel
+        // id here previously crashed the process (BadForegroundServiceNotificationException).
         return notificationHelper.buildProgressNotification(
             this,
-            App.NOTIFICATION_DOWNLOADS,
+            R.drawable.ic_download,
             contentIntent,
-            App.CHANNEL_DOWNLOADS,
+            getString(R.string.app_name),
             downloads,
             notMetRequirements,
         )

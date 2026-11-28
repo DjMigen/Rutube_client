@@ -183,45 +183,58 @@ private fun HeroVideoPreview(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val player = remember(streamUrl) {
-        PlayerFactory.create(context).apply {
-            volume = 0f
-            repeatMode = Player.REPEAT_MODE_ONE
-            setMediaItem(PlayerFactory.mediaItem(streamUrl, streamUrl))
-            prepare()
-        }
-    }
-    var alpha by remember { mutableFloatStateOf(0f) }
 
-    DisposableEffect(player) {
-        val listener = object : Player.Listener {
-            override fun onRenderedFirstFrame() {
-                alpha = 1f
+    // Defer building the player + SurfaceView: ExoPlayer construction and the
+    // SurfaceView surface setup were causing a ~40-frame hitch on the first
+    // frame of the home screen. Paint the static backdrop first, then start
+    // the muted preview once the feed has settled.
+    var ready by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(1200)
+        ready = true
+    }
+
+    if (ready) {
+        val player = remember(streamUrl) {
+            PlayerFactory.create(context).apply {
+                volume = 0f
+                repeatMode = Player.REPEAT_MODE_ONE
+                setMediaItem(PlayerFactory.mediaItem(streamUrl, streamUrl))
+                prepare()
             }
         }
-        player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            player.release()
-        }
-    }
+        var alpha by remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(player) {
-        delay(2000)
-        player.playWhenReady = true
-    }
-
-    AndroidView(
-        factory = {
-            PlayerView(context).apply {
-                layoutParams = android.view.ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-                useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                this.player = player
+        DisposableEffect(player) {
+            val listener = object : Player.Listener {
+                override fun onRenderedFirstFrame() {
+                    alpha = 1f
+                }
             }
-        },
-        modifier = modifier.alpha(alpha),
-    )
+            player.addListener(listener)
+            onDispose {
+                player.removeListener(listener)
+                player.release()
+            }
+        }
+
+        LaunchedEffect(player) {
+            delay(2000)
+            player.playWhenReady = true
+        }
+
+        AndroidView(
+            factory = {
+                PlayerView(context).apply {
+                    layoutParams = android.view.ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    this.player = player
+                }
+            },
+            modifier = modifier.alpha(alpha),
+        )
+    }
 }
 
 /** Titled horizontal carousel of Netflix-style video cards. */

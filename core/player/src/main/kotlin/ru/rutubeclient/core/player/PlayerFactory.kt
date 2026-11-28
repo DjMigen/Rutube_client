@@ -73,6 +73,15 @@ object PlayerFactory {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     /**
+     * Pre-initializes the shared cache + HTTP client off the main thread. The
+     * first player (the hero preview) otherwise opens the cache's SQLite DB on
+     * the UI thread, causing a startup hitch. Call from Application.onCreate.
+     */
+    fun warmUp(context: Context) {
+        streamingDataSourceFactory(context)
+    }
+
+    /**
      * Creates a fully configured player. When an [OfflineContentProvider] is
      * given, downloaded videos play from the downloads cache and everything
      * else streams; without one the player is streaming-only.

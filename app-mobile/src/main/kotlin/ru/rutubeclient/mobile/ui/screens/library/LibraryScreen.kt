@@ -225,12 +225,16 @@ private fun DownloadsTab(
                 DownloadEntity.STATE_COMPLETED ->
                     "Скачано • ${entry.qualityHeight}p • ${formatBytes(entry.bytesDownloaded)}"
 
-                DownloadEntity.STATE_DOWNLOADING, DownloadEntity.STATE_QUEUED -> {
-                    if (entry.bytesTotal > 0) {
+                DownloadEntity.STATE_DOWNLOADING -> when {
+                    entry.bytesTotal > 0 -> {
                         val pct = (entry.bytesDownloaded * 100 / entry.bytesTotal).toInt()
                         "Загрузка… $pct% (${formatBytes(entry.bytesDownloaded)})"
-                    } else "В очереди…"
+                    }
+                    entry.bytesDownloaded > 0 -> "Загрузка… ${formatBytes(entry.bytesDownloaded)}"
+                    else -> "Загрузка…"
                 }
+
+                DownloadEntity.STATE_QUEUED -> "В очереди…"
 
                 else -> "Ошибка загрузки"
             }
@@ -251,15 +255,25 @@ private fun DownloadsTab(
                         }
                     },
                 )
-                if (entry.state == DownloadEntity.STATE_DOWNLOADING && entry.bytesTotal > 0) {
-                    LinearProgressIndicator(
-                        progress = {
-                            (entry.bytesDownloaded.toFloat() / entry.bytesTotal).coerceIn(0f, 1f)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp),
-                    )
+                if (entry.state == DownloadEntity.STATE_DOWNLOADING) {
+                    if (entry.bytesTotal > 0) {
+                        LinearProgressIndicator(
+                            progress = {
+                                (entry.bytesDownloaded.toFloat() / entry.bytesTotal).coerceIn(0f, 1f)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                        )
+                    } else {
+                        // HLS content length is unknown until done — show an
+                        // indeterminate bar so the download visibly progresses.
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp),
+                        )
+                    }
                 }
                 HorizontalDivider(thickness = 0.5.dp)
             }

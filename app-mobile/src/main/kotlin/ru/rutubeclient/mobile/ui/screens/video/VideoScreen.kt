@@ -82,7 +82,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import ru.rutubeclient.core.database.DownloadEntity
 import ru.rutubeclient.core.model.Comment
+import ru.rutubeclient.core.model.episodesForSeason
 import ru.rutubeclient.core.player.PlaybackEvent
 import ru.rutubeclient.core.player.PlaybackSession
 import ru.rutubeclient.core.player.PlaybackStatus
@@ -92,7 +94,7 @@ import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
 import ru.rutubeclient.mobile.ui.components.VideoCard
-import ru.rutubeclient.core.model.episodesForSeason
+import ru.rutubeclient.mobile.ui.formatBytes
 import ru.rutubeclient.mobile.ui.formatDate
 import ru.rutubeclient.mobile.ui.formatViews
 
@@ -402,10 +404,18 @@ fun VideoScreen(
                         TextButton(onClick = { showDownloadDialog = true }) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.width(4.dp))
+                            val download = state.download
                             Text(
-                                when (state.download?.state) {
-                                    "completed" -> "Скачано"
-                                    "downloading", "queued" -> "Качается…"
+                                when (download?.state) {
+                                    DownloadEntity.STATE_COMPLETED -> "Скачано"
+                                    DownloadEntity.STATE_DOWNLOADING -> when {
+                                        download.bytesTotal > 0 ->
+                                            "Качается… ${(download.bytesDownloaded * 100 / download.bytesTotal)}%"
+                                        download.bytesDownloaded > 0 ->
+                                            "Качается… ${formatBytes(download.bytesDownloaded)}"
+                                        else -> "Качается…"
+                                    }
+                                    DownloadEntity.STATE_QUEUED -> "Качается…"
                                     else -> "Скачать"
                                 }
                             )

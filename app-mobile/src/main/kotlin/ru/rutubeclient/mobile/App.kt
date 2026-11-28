@@ -4,10 +4,14 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import ru.rutubeclient.core.database.AppDatabase
 import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.network.HttpRuTubeApi
 import ru.rutubeclient.core.network.RuTubeApi
+import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.mobile.download.DownloadsManager
 import ru.rutubeclient.mobile.settings.SettingsRepository
 
@@ -19,6 +23,9 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Warm the player cache off the main thread so the hero preview's first
+        // player doesn't open the cache SQLite DB on the UI thread.
+        CoroutineScope(Dispatchers.IO).launch { PlayerFactory.warmUp(this@App) }
         createNotificationChannels()
     }
 
