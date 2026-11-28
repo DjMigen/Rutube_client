@@ -67,8 +67,11 @@ a stale ViewModel.
   `PlaybackEnvironment` (global var) was removed — pass the provider explicitly.
 - **Signed HLS URLs expire.** Re-resolve before playback and on HTTP 403. Enforced
   in `PlaybackSession` and in `DownloadsManager` (re-resolves before each download).
-- **Downloads**: Media3 `DownloadManager` + `AppDownloadService`; one rendition
-  selected via `TrackSelectionParameters`; smart download queues the next episode.
+- **Downloads**: Media3 `DownloadManager` + `AppDownloadService`. `DownloadsManager`
+  fetches the HLS master playlist, parses `EXT-X-STREAM-INF`, and downloads the
+  chosen variant's media-playlist URL directly (exact quality, small files); it
+  re-resolves + re-enqueues once on failure (expired signature). Smart download
+  queues the next episode.
   `AppDownloadService` resolving deps via `(application as App).container` is the
   sanctioned service-locator pattern for system-created components — don't add
   more such lookups elsewhere (screens/VMs get deps via constructors).

@@ -27,6 +27,9 @@ import ru.rutubeclient.core.model.VideoDetails
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.core.player.PlayerFactory
 import ru.rutubeclient.core.player.OfflineContentProvider
+import ru.rutubeclient.core.player.HlsVariant
+import ru.rutubeclient.core.player.parseMasterPlaylistVariants
+import ru.rutubeclient.core.player.selectHlsVariant
 import java.io.IOException
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.Executors
@@ -151,8 +154,6 @@ class DownloadsManager(
 
     // --- HLS variant resolution ---
 
-    private data class HlsVariant(val height: Int, val url: String)
-
     /** Resolves the download URL + height for the requested quality, falling
      *  back to the master URL if the playlist can't be fetched/parsed. */
     private suspend fun resolveDownloadVariant(
@@ -160,7 +161,7 @@ class DownloadsManager(
         qualityHeight: Int,
     ): Pair<String, Int> = runCatching {
         val variants = fetchAndParseVariants(masterUrl)
-        val selected = selectVariant(variants, qualityHeight)
+        val selected = selectHlsVariant(variants, qualityHeight)
         if (selected != null) selected.url to selected.height else masterUrl to qualityHeight
     }.getOrDefault(masterUrl to qualityHeight)
 
@@ -171,37 +172,7 @@ class DownloadsManager(
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             response.body?.string().orEmpty()
         }
-        return parseVariants(master)
-    }
-
-    /** Extracts (height, url) pairs from an HLS master playlist. */
-    private fun parseVariants(master: String): List<HlsVariant> {
-        val resolution = Regex("""RESOLUTION=(\d+)x(\d+)""")
-        val variants = mutableListOf<HlsVariant>()
-        var pendingHeight = 0
-        for (line in master.lineSequence()) {
-            when {
-                line.startsWith("#EXT-X-STREAM-INF") ->
-                    pendingHeight = resolution.find(line)?.groupValues?.get(2)?.toIntOrNull() ?: 0
-
-                line.startsWith("#") -> Unit
-
-                line.isNotBlank() -> {
-                    if (pendingHeight > 0) variants.add(HlsVariant(pendingHeight, line.trim()))
-                    pendingHeight = 0
-                }
-            }
-        }
-        // Each rendition is listed twice (CDN mirrors); keep one URL per height.
-        return variants.distinctBy { it.height }
-    }
-
-    private fun selectVariant(variants: List<HlsVariant>, qualityHeight: Int): HlsVariant? {
-        if (variants.isEmpty()) return null
-        if (qualityHeight <= 0) return variants.maxByOrNull { it.height }
-        return variants.firstOrNull { it.height == qualityHeight }
-            ?: variants.filter { it.height <= qualityHeight }.maxByOrNull { it.height }
-            ?: variants.minByOrNull { it.height }
+        return parseMasterPlaylistVariants(master)
     }
 
     private fun downloadRequest(id: String, url: String): DownloadRequest =
