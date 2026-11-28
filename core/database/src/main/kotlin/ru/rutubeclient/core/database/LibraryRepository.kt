@@ -3,13 +3,12 @@ package ru.rutubeclient.core.database
 import kotlinx.coroutines.flow.Flow
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
-import ru.rutubeclient.core.network.PlaybackPositionStore
 
 /**
  * Single entry point for all locally stored user data:
  * history, subscriptions, bookmarks, search history and downloads.
  */
-class LibraryRepository(db: AppDatabase) : PlaybackPositionStore {
+class LibraryRepository(db: AppDatabase) {
 
     private val historyDao = db.historyDao()
     private val subscriptionDao = db.subscriptionDao()
@@ -24,7 +23,7 @@ class LibraryRepository(db: AppDatabase) : PlaybackPositionStore {
 
     suspend fun getHistoryEntry(videoId: String): HistoryEntity? = historyDao.get(videoId)
 
-    override suspend fun savePosition(details: VideoDetails, positionMs: Long) {
+    suspend fun savePosition(details: VideoDetails, positionMs: Long) {
         historyDao.upsert(
             HistoryEntity(
                 videoId = details.id,

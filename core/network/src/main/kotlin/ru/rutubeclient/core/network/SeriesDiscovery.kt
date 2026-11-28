@@ -2,8 +2,10 @@ package ru.rutubeclient.core.network
 
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
+import ru.rutubeclient.core.model.episodeOf
 import ru.rutubeclient.core.model.normalizeSeriesTitle
 import ru.rutubeclient.core.model.parseSeriesInfo
+import ru.rutubeclient.core.model.seasonOf
 
 /**
  * Concentrates the "which episodes belong to this series and what is the next one"
@@ -81,14 +83,11 @@ class SeriesDiscovery(private val api: RuTubeApi) {
             ?: candidates.firstOrNull()?.let { parseSeriesInfo(it.title)?.season } ?: 1
         val currentEpisode = currentInfo.episode ?: 0
 
-        val seasonCandidates = candidates.filter { v ->
-            val s = parseSeriesInfo(v.title)?.season ?: v.season ?: 1
-            s == currentSeason
-        }
+        val seasonCandidates = candidates.filter { seasonOf(it) == currentSeason }
         val sortedEpisodes = seasonCandidates
-            .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+            .sortedBy { episodeOf(it) ?: Int.MAX_VALUE }
         val nextId = sortedEpisodes
-            .firstOrNull { (parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE) > currentEpisode }
+            .firstOrNull { (episodeOf(it) ?: Int.MAX_VALUE) > currentEpisode }
             ?.id
 
         return Result(

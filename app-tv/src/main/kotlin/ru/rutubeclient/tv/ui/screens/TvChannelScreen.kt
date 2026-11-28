@@ -23,85 +23,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import ru.rutubeclient.core.database.LibraryRepository
-import ru.rutubeclient.core.model.Video
-import ru.rutubeclient.core.network.RuTubeApi
+import ru.rutubeclient.core.presentation.ChannelViewModel
 import ru.rutubeclient.tv.ui.TvErrorBox
 import ru.rutubeclient.tv.ui.TvLoadingBox
 import ru.rutubeclient.tv.ui.TvVideoCard
 
-class TvChannelViewModel(
-    private val authorId: Long,
-    initialName: String,
-    private val api: RuTubeApi,
-    private val repository: LibraryRepository,
-) : ViewModel() {
-
-    data class UiState(
-        val authorName: String = "",
-        val authorAvatar: String? = null,
-        val videos: List<Video> = emptyList(),
-        val isLoading: Boolean = true,
-        val error: String? = null,
-        val isSubscribed: Boolean = false,
-    )
-
-    private val _state = MutableStateFlow(UiState(authorName = initialName))
-    val state = _state.asStateFlow()
-
-    init {
-        load()
-        viewModelScope.launch {
-            repository.isSubscribed(authorId).collect { subscribed ->
-                _state.update { it.copy(isSubscribed = subscribed) }
-            }
-        }
-    }
-
-    fun load() {
-        _state.update { it.copy(isLoading = true, error = null) }
-        viewModelScope.launch {
-            runCatching { api.getChannelVideos(authorId, 1) }
-                .onSuccess { page ->
-                    _state.update {
-                        it.copy(
-                            videos = page.items,
-                            authorAvatar = it.authorAvatar
-                                ?: page.items.firstOrNull()?.author?.avatarUrl,
-                            isLoading = false,
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    _state.update {
-                        it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки")
-                    }
-                }
-        }
-    }
-
-    fun toggleSubscription() {
-        viewModelScope.launch {
-            if (_state.value.isSubscribed) {
-                repository.unsubscribe(authorId)
-            } else {
-                repository.subscribe(authorId, _state.value.authorName, _state.value.authorAvatar)
-            }
-        }
-    }
-}
-
 @Composable
 fun TvChannelScreen(
-    viewModel: TvChannelViewModel,
+    viewModel: ChannelViewModel,
     onVideoClick: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -110,7 +41,7 @@ fun TvChannelScreen(
         state.isLoading -> TvLoadingBox()
         state.error != null -> TvErrorBox(
             message = state.error ?: "Ошибка",
-            onRetry = viewModel::load,
+            onRetry = viewModel::refresh,
         )
 
         else -> LazyVerticalGrid(

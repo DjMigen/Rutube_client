@@ -40,13 +40,14 @@ import coil.compose.AsyncImage
 import ru.rutubeclient.core.model.CatalogEntry
 import ru.rutubeclient.core.model.CatalogTab
 import ru.rutubeclient.core.model.TvShow
+import ru.rutubeclient.core.presentation.CatalogViewModel
 import ru.rutubeclient.tv.ui.TvErrorBox
 import ru.rutubeclient.tv.ui.TvLoadingBox
 import ru.rutubeclient.tv.ui.TvVideoCard
 
 @Composable
 fun TvCatalogScreen(
-    viewModel: TvCatalogViewModel,
+    viewModel: CatalogViewModel,
     onVideoClick: (String) -> Unit,
     onTvShowClick: (Int) -> Unit,
 ) {

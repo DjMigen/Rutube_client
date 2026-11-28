@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.rutubeclient.core.presentation.ChannelViewModel
 import ru.rutubeclient.mobile.ui.components.AvatarImage
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox

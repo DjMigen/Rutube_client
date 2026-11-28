@@ -1,9 +1,7 @@
-package ru.rutubeclient.mobile.ui.screens.home
+package ru.rutubeclient.core.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -14,12 +12,19 @@ import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.network.HomeFeedLoader
 import ru.rutubeclient.core.network.RuTubeApi
-import ru.rutubeclient.mobile.ui.components.ContinueItem
 
+/**
+ * Home feed shared by mobile and TV. Platform deltas are constructor
+ * parameters: TV passes `categoryLimit = 5, alwaysRecommendations = true`.
+ */
 class HomeViewModel(
     private val api: RuTubeApi,
     private val repository: LibraryRepository,
+    categoryLimit: Int = 6,
+    alwaysRecommendations: Boolean = false,
 ) : ViewModel() {
+
+    private val feedLoader = HomeFeedLoader(api, categoryLimit, alwaysRecommendations)
 
     enum class RowKind { VIDEOS, TOP10 }
 
@@ -62,7 +67,7 @@ class HomeViewModel(
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             runCatching {
-                HomeFeedLoader(api).load(
+                feedLoader.load(
                     repository.history.first().take(2).map {
                         HomeFeedLoader.RecentHistoryEntry(it.videoId, it.title, it.authorId)
                     }

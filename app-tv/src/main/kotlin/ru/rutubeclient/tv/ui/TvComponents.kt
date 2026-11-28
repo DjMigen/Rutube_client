@@ -60,9 +60,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil.compose.AsyncImage
 import ru.rutubeclient.core.model.Video
-
-/** A video with its playback progress (0..1) for the "Continue watching" row. */
-data class ContinueItem(val video: Video, val progress: Float)
+import ru.rutubeclient.core.presentation.ContinueItem
 
 /** Focusable video card for TV grids and rows. */
 @Composable

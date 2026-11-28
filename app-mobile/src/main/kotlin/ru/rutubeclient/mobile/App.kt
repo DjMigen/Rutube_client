@@ -8,7 +8,6 @@ import ru.rutubeclient.core.database.AppDatabase
 import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.network.HttpRuTubeApi
 import ru.rutubeclient.core.network.RuTubeApi
-import ru.rutubeclient.core.player.PlaybackEnvironment
 import ru.rutubeclient.mobile.download.DownloadsManager
 import ru.rutubeclient.mobile.settings.SettingsRepository
 
@@ -20,8 +19,6 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        // Lets the playback service route downloaded videos to the offline cache.
-        PlaybackEnvironment.offlineProvider = container.downloadsManager
         createNotificationChannels()
     }
 

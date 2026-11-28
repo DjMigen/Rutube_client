@@ -73,11 +73,11 @@ object PlayerFactory {
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
     /**
-     * Creates a fully configured player. When the app registered an
-     * [OfflineContentProvider], downloaded videos play from the downloads
-     * cache and everything else streams.
+     * Creates a fully configured player. When an [OfflineContentProvider] is
+     * given, downloaded videos play from the downloads cache and everything
+     * else streams; without one the player is streaming-only.
      */
-    fun create(context: Context, provider: OfflineContentProvider? = PlaybackEnvironment.offlineProvider): ExoPlayer {
+    fun create(context: Context, provider: OfflineContentProvider? = null): ExoPlayer {
         val trackSelector = DefaultTrackSelector(context).apply {
             parameters = DefaultTrackSelector.Parameters.Builder(context)
                 .setExceedVideoConstraintsIfNecessary(true)

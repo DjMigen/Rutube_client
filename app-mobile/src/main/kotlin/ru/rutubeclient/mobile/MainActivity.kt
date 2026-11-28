@@ -17,6 +17,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -29,16 +30,19 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import ru.rutubeclient.mobile.di.vmFactory
+import ru.rutubeclient.core.player.PlaybackSession
+import ru.rutubeclient.core.player.StreamResolver
+import ru.rutubeclient.core.presentation.CatalogViewModel
+import ru.rutubeclient.core.presentation.ChannelViewModel
+import ru.rutubeclient.core.presentation.HomeViewModel
+import ru.rutubeclient.core.presentation.Routes
+import ru.rutubeclient.core.presentation.TvShowViewModel
+import ru.rutubeclient.core.presentation.vmFactory
 import ru.rutubeclient.mobile.player.CastManager
 import ru.rutubeclient.mobile.ui.screens.catalog.CatalogScreen
-import ru.rutubeclient.mobile.ui.screens.catalog.CatalogViewModel
 import ru.rutubeclient.mobile.ui.screens.catalog.TvShowScreen
-import ru.rutubeclient.mobile.ui.screens.catalog.TvShowViewModel
 import ru.rutubeclient.mobile.ui.screens.channel.ChannelScreen
-import ru.rutubeclient.mobile.ui.screens.channel.ChannelViewModel
 import ru.rutubeclient.mobile.ui.screens.home.HomeScreen
-import ru.rutubeclient.mobile.ui.screens.home.HomeViewModel
 import ru.rutubeclient.mobile.ui.screens.library.LibraryScreen
 import ru.rutubeclient.mobile.ui.screens.library.LibraryViewModel
 import ru.rutubeclient.mobile.ui.screens.search.SearchScreen
@@ -48,25 +52,6 @@ import ru.rutubeclient.mobile.ui.screens.subscriptions.SubscriptionsViewModel
 import ru.rutubeclient.mobile.ui.screens.video.VideoScreen
 import ru.rutubeclient.mobile.ui.screens.video.VideoViewModel
 import ru.rutubeclient.mobile.ui.theme.RuTubeTheme
-
-object Routes {
-    const val HOME = "home"
-    const val SEARCH = "search"
-    const val SUBSCRIPTIONS = "subscriptions"
-    const val LIBRARY = "library"
-    const val CATALOG = "catalog"
-    const val TV_SHOW = "tvshow/{tvId}"
-    const val VIDEO = "video/{videoId}?fromStart={fromStart}&next={next}"
-    const val CHANNEL = "channel/{authorId}?name={name}"
-
-    fun video(id: String, fromStart: Boolean = false, next: String? = null): String {
-        val base = "video/$id?fromStart=$fromStart"
-        return if (next.isNullOrEmpty()) base else "$base&next=$next"
-    }
-    fun tvShow(id: Int) = "tvshow/$id"
-    fun channel(authorId: Long, name: String) =
-        "channel/$authorId?name=${android.net.Uri.encode(name)}"
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -215,9 +200,10 @@ fun AppNavHost(castManager: CastManager) {
                 val videoId = entry.arguments?.getString("videoId") ?: return@composable
                 val fromStart = entry.arguments?.getBoolean("fromStart") ?: false
                 val next = entry.arguments?.getString("next")
-                val container = App.container(androidx.compose.ui.platform.LocalContext.current)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val container = App.container(context)
                 val vm: VideoViewModel = viewModel(
-                    key = "video-$videoId-$fromStart-$next",
+                    key = Routes.videoKey(videoId, fromStart, next),
                     factory = vmFactory {
                         VideoViewModel(
                             videoId,
@@ -229,8 +215,23 @@ fun AppNavHost(castManager: CastManager) {
                         )
                     },
                 )
+                // One playback session per screen visit (see docs/adr/0001);
+                // downloaded videos route to the offline cache via the provider.
+                val session = remember {
+                    PlaybackSession.create(
+                        context = context,
+                        streamResolver = StreamResolver { id ->
+                            container.api.getStreamInfo(id).hlsUrl
+                        },
+                        offlineProvider = container.downloadsManager,
+                    )
+                }
+                DisposableEffect(session) {
+                    onDispose { session.close() }
+                }
                 VideoScreen(
                     viewModel = vm,
+                    session = session,
                     castManager = castManager,
                     onBack = {
                         navController.navigate(Routes.HOME) {

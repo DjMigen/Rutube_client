@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import ru.rutubeclient.core.presentation.TvShowViewModel
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
 import ru.rutubeclient.mobile.ui.components.VideoListItem

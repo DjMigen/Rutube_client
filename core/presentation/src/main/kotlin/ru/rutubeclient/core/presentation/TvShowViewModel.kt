@@ -1,4 +1,4 @@
-package ru.rutubeclient.tv.ui.screens.catalog
+package ru.rutubeclient.core.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,6 +10,7 @@ import ru.rutubeclient.core.model.TvShow
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.network.RuTubeApi
 
+/** TV show (series) details + seasons/episodes, shared by mobile and TV. */
 class TvShowViewModel(
     private val tvId: Int,
     private val api: RuTubeApi,

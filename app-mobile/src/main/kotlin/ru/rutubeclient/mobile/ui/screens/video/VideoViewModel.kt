@@ -2,10 +2,7 @@ package ru.rutubeclient.mobile.ui.screens.video
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -19,11 +16,8 @@ import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Comment
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
-import ru.rutubeclient.core.model.parseSeriesInfo
-import ru.rutubeclient.core.model.normalizeSeriesTitle
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.core.network.SeriesDiscovery
-import ru.rutubeclient.core.network.VideoSession
 import ru.rutubeclient.mobile.download.DownloadsManager
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -38,15 +32,10 @@ class VideoViewModel(
 
     data class UiState(
         val details: VideoDetails? = null,
-        /** Freshly resolved signed HLS URL; null until loaded. */
-        val streamUrl: String? = null,
-        /** Bumped on every stream re-resolve so the player re-sets the item. */
-        val streamVersion: Int = 0,
+        /** Saved playback position to resume from; 0 = from the beginning. */
         val startPositionMs: Long = 0L,
         val isLoading: Boolean = true,
         val error: String? = null,
-        /** Set when playback failed; the UI should re-attach with the new URL. */
-        val playbackFailed: Boolean = false,
         val comments: List<Comment> = emptyList(),
         val commentsHasNext: Boolean = false,
         val commentsLoading: Boolean = false,
@@ -67,11 +56,7 @@ class VideoViewModel(
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
 
-    /** Scope that survives onCleared() for the final position write. */
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private var commentsPage = 1
-    private var lastSavedPositionMs = 0L
 
     init {
         loadVideo()
@@ -79,23 +64,19 @@ class VideoViewModel(
     }
 
     fun loadVideo() {
-        _state.update { it.copy(isLoading = true, error = null, playbackFailed = false) }
+        _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            runCatching { VideoSession(api).load(videoId) }
-                .onSuccess { loaded ->
-                    val details = loaded.details
+            runCatching { api.getVideo(videoId) }
+                .onSuccess { details ->
                     val history = repository.getHistoryEntry(videoId)
                     val rating = repository.getRating(videoId)
                     _state.update {
                         it.copy(
                             details = details,
-                            streamUrl = loaded.streamUrl,
-                            streamVersion = it.streamVersion + 1,
                             startPositionMs = if (startFromBeginning) 0L else history?.positionMs ?: 0L,
                             nextVideoId = this@VideoViewModel.nextVideoId,
                             rating = rating,
                             isLoading = false,
-                            playbackFailed = false,
                         )
                     }
                     loadComments(reset = true)
@@ -123,43 +104,14 @@ class VideoViewModel(
         }
     }
 
-    /** Resolves a fresh signed stream URL. Called on load and after playback errors (expiry). */
-    private suspend fun resolveStream() {
-        runCatching { VideoSession(api).resolveStream(videoId) }
-            .onSuccess { url ->
-                _state.update {
-                    it.copy(
-                        streamUrl = url,
-                        streamVersion = it.streamVersion + 1,
-                        playbackFailed = false,
-                    )
-                }
-            }
-            .onFailure { e ->
-                _state.update {
-                    it.copy(error = e.message ?: "Поток недоступен", playbackFailed = true)
-                }
-            }
-    }
-
-    /** Called by the player error listener — likely an expired signature; re-resolve once. */
-    fun onPlaybackError(currentPositionMs: Long) {
-        lastSavedPositionMs = currentPositionMs
-        viewModelScope.launch { resolveStream() }
-    }
-
-    fun savePosition(positionMs: Long) {
+    /**
+     * Position sink for the playback session. Suspend so the session can
+     * carry the final write through its own NonCancellable scope.
+     */
+    suspend fun persistPosition(positionMs: Long) {
         val details = _state.value.details ?: return
         if (positionMs <= 0L) return
-        lastSavedPositionMs = positionMs
-        viewModelScope.launch { VideoSession(api).savePosition(repository, details, positionMs) }
-    }
-
-    /** Fire-and-forget save that survives ViewModel teardown. */
-    fun savePositionFinal(positionMs: Long) {
-        val details = _state.value.details ?: return
-        if (positionMs <= 0L) return
-        ioScope.launch { VideoSession(api).savePosition(repository, details, positionMs) }
+        repository.savePosition(details, positionMs)
     }
 
     fun toggleBookmark() {

@@ -1,4 +1,4 @@
-package ru.rutubeclient.mobile.ui.screens.channel
+package ru.rutubeclient.core.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,11 +10,16 @@ import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.network.RuTubeApi
 
+/**
+ * Channel page shared by mobile and TV. TV passes `pagination = false`
+ * (D-pad grids load a single page).
+ */
 class ChannelViewModel(
     private val authorId: Long,
     initialName: String,
     private val api: RuTubeApi,
     private val repository: LibraryRepository,
+    private val pagination: Boolean = true,
 ) : ViewModel() {
 
     data class UiState(
@@ -49,6 +54,7 @@ class ChannelViewModel(
     }
 
     fun loadMore() {
+        if (!pagination) return
         val s = _state.value
         if (!s.hasNext || s.isLoading || s.isLoadingMore) return
         page++

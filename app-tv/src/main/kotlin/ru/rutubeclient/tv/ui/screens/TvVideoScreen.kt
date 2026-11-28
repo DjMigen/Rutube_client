@@ -41,22 +41,15 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.material3.Icon
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,19 +58,19 @@ import kotlinx.coroutines.launch
 import ru.rutubeclient.core.database.LibraryRepository
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.model.VideoDetails
-import ru.rutubeclient.core.model.normalizeSeriesTitle
-import ru.rutubeclient.core.model.parseSeriesInfo
+import ru.rutubeclient.core.model.episodeOf
+import ru.rutubeclient.core.model.episodesForSeason
 import ru.rutubeclient.core.network.RuTubeApi
 import ru.rutubeclient.core.network.SeriesDiscovery
-import ru.rutubeclient.core.network.VideoSession
-import ru.rutubeclient.core.player.PlayerFactory
-import ru.rutubeclient.core.player.QualityController
+import ru.rutubeclient.core.player.PlaybackEvent
+import ru.rutubeclient.core.player.PlaybackSession
+import ru.rutubeclient.core.player.PlaybackStatus
 import ru.rutubeclient.core.player.QualityOption
 import ru.rutubeclient.tv.ui.TvErrorBox
 import ru.rutubeclient.tv.ui.TvLoadingBox
 
 class TvVideoViewModel(
-    private val videoId: String,
+    val videoId: String,
     private val api: RuTubeApi,
     private val repository: LibraryRepository,
     private val startFromBeginning: Boolean = false,
@@ -86,8 +79,7 @@ class TvVideoViewModel(
 
     data class UiState(
         val details: VideoDetails? = null,
-        val streamUrl: String? = null,
-        val streamVersion: Int = 0,
+        /** Saved playback position to resume from; 0 = from the beginning. */
         val startPositionMs: Long = 0L,
         val isLoading: Boolean = true,
         val error: String? = null,
@@ -102,9 +94,6 @@ class TvVideoViewModel(
     private val _state = MutableStateFlow(UiState())
     val state = _state.asStateFlow()
 
-    /** Scope that survives onCleared() for the final position write. */
-    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     init {
         load()
         observeBookmarks()
@@ -113,15 +102,12 @@ class TvVideoViewModel(
     fun load() {
         _state.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            runCatching { VideoSession(api).load(videoId) }
-                .onSuccess { loaded ->
-                    val details = loaded.details
+            runCatching { api.getVideo(videoId) }
+                .onSuccess { details ->
                     val history = repository.getHistoryEntry(videoId)
                     _state.update {
                         it.copy(
                             details = details,
-                            streamUrl = loaded.streamUrl,
-                            streamVersion = it.streamVersion + 1,
                             startPositionMs = if (startFromBeginning) 0L else history?.positionMs ?: 0L,
                             nextVideoId = this@TvVideoViewModel.nextVideoId,
                             rating = repository.getRating(videoId),
@@ -152,26 +138,14 @@ class TvVideoViewModel(
         }
     }
 
-    private suspend fun resolveStream() {
-        runCatching { VideoSession(api).resolveStream(videoId) }
-            .onSuccess { url ->
-                _state.update {
-                    it.copy(streamUrl = url, streamVersion = it.streamVersion + 1)
-                }
-            }
-            .onFailure { e ->
-                _state.update { it.copy(error = e.message ?: "Поток недоступен") }
-            }
-    }
-
-    fun onPlaybackError(positionMs: Long) {
-        viewModelScope.launch { resolveStream() }
-    }
-
-    fun savePosition(positionMs: Long) {
+    /**
+     * Position sink for the playback session. Suspend so the session can
+     * carry the final write through its own NonCancellable scope.
+     */
+    suspend fun persistPosition(positionMs: Long) {
         val details = _state.value.details ?: return
         if (positionMs <= 0L) return
-        ioScope.launch { VideoSession(api).savePosition(repository, details, positionMs) }
+        repository.savePosition(details, positionMs)
     }
 
     fun toggleBookmark() {
@@ -221,131 +195,74 @@ class TvVideoViewModel(
 }
 
 /** Full-screen TV player with D-pad controls: OK = play/pause, ←/→ = ±10s, ↑ = controls. */
-/** Three hours in milliseconds; triggers the "Are you still watching?" dialog. */
-private const val STILL_WATCHING_MS = 3 * 60 * 60 * 1000L
-
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun TvVideoScreen(
     viewModel: TvVideoViewModel,
+    session: PlaybackSession,
     onBack: () -> Unit,
     onVideoClick: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val pb by session.state.collectAsStateWithLifecycle()
+    val player = session.player
 
-    val player = remember { PlayerFactory.create(context) }
-    val qualityController = remember { QualityController(player) }
-    var qualities by remember { mutableStateOf(listOf<QualityOption>()) }
     var controlsVisible by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var showQualityPicker by remember { mutableStateOf(false) }
     var selectedQualityHeight by remember { mutableIntStateOf(0) }
-    var sleepTimerMinutes by remember { mutableStateOf<Int?>(null) }
-    var nextEpisodeCountdown by remember { mutableStateOf<Int?>(null) }
-    var textLanguages by remember { mutableStateOf(listOf<String>()) }
-    var audioLanguages by remember { mutableStateOf(listOf<String>()) }
     var showTextPicker by remember { mutableStateOf(false) }
     var showAudioPicker by remember { mutableStateOf(false) }
     var selectedTextLanguage by remember { mutableStateOf<String?>(null) }
     var selectedAudioLanguage by remember { mutableStateOf<String?>(null) }
-    var showStillWatching by remember { mutableStateOf(false) }
-    var stillWatchingAck by remember { mutableStateOf(0) }
 
-    // Sleep timer: pause playback when it elapses.
-    LaunchedEffect(sleepTimerMinutes) {
-        val minutes = sleepTimerMinutes ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(minutes * 60_000L)
-        player.pause()
-        sleepTimerMinutes = null
-    }
-
-    // Autoplay next episode countdown.
-    LaunchedEffect(nextEpisodeCountdown) {
-        var remaining = nextEpisodeCountdown ?: return@LaunchedEffect
-        while (remaining > 0) {
-            kotlinx.coroutines.delay(1000)
-            remaining--
-            nextEpisodeCountdown = remaining
+    // Attach the video once details (and the resume position) are loaded.
+    // open() is idempotent for the same video id.
+    LaunchedEffect(state.details) {
+        if (state.details != null) {
+            session.open(
+                videoId = viewModel.videoId,
+                resumeFromMs = state.startPositionMs,
+                onSavePosition = { pos -> viewModel.persistPosition(pos) },
+            )
         }
-        nextEpisodeCountdown = null
-        state.nextVideoId?.let { onVideoClick(it) }
     }
 
-    // "Are you still watching?" after 3 hours of continuous playback.
-    LaunchedEffect(isPlaying, stillWatchingAck) {
-        if (!isPlaying) return@LaunchedEffect
-        delay(STILL_WATCHING_MS)
-        showStillWatching = true
+    // The ViewModel owns "what is the next episode"; the session owns timing.
+    LaunchedEffect(state.nextVideoId) { session.setUpNext(state.nextVideoId) }
+
+    // One-shot playback events.
+    LaunchedEffect(session) {
+        session.events.collect { event ->
+            when (event) {
+                is PlaybackEvent.NavigateToNext -> onVideoClick(event.videoId)
+                is PlaybackEvent.FatalError -> Unit // rendered from state below
+            }
+        }
     }
 
     val boxFocusRequester = remember { FocusRequester() }
     val pauseFocusRequester = remember { FocusRequester() }
 
-    // Attach stream when ready / refreshed.
-    var appliedVersion by remember { mutableIntStateOf(-1) }
-    LaunchedEffect(state.streamVersion, state.streamUrl) {
-        val url = state.streamUrl ?: return@LaunchedEffect
-        if (appliedVersion == state.streamVersion) return@LaunchedEffect
-        appliedVersion = state.streamVersion
-        val resume = if (player.currentPosition > 0) player.currentPosition else state.startPositionMs
-        player.setMediaItem(PlayerFactory.mediaItem(url))
-        player.prepare()
-        if (resume > 0) player.seekTo(resume)
-        player.playWhenReady = true
-    }
-
-    // Player listener: errors → re-resolve, tracks → qualities, progress → UI.
+    // Transport observation for the custom controls (progress bar, play/pause label).
     DisposableEffect(player) {
         val listener = object : Player.Listener {
-            override fun onPlayerError(error: PlaybackException) {
-                viewModel.onPlaybackError(player.currentPosition)
-            }
-
-            override fun onTracksChanged(tracks: Tracks) {
-                qualities = qualityController.availableQualities()
-                textLanguages = qualityController.availableTextLanguages()
-                audioLanguages = qualityController.availableAudioLanguages()
-            }
-
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED && state.nextVideoId != null) {
-                    nextEpisodeCountdown = 5
-                }
-            }
         }
         player.addListener(listener)
-        onDispose {
-            player.removeListener(listener)
-            player.release()
-        }
+        onDispose { player.removeListener(listener) }
     }
 
-    // Progress + position persistence.
+    // Progress polling for the controls overlay.
     LaunchedEffect(player) {
         while (true) {
             delay(1000)
             positionMs = player.currentPosition.coerceAtLeast(0)
             durationMs = player.duration.coerceAtLeast(0)
-        }
-    }
-    LaunchedEffect(player, state.details) {
-        while (true) {
-            delay(5000)
-            if (player.duration > 0 && player.currentPosition > 0) {
-                viewModel.savePosition(player.currentPosition)
-            }
-        }
-    }
-    DisposableEffect(Unit) {
-        onDispose {
-            if (player.currentPosition > 0) viewModel.savePosition(player.currentPosition)
         }
     }
 
@@ -523,27 +440,29 @@ fun TvVideoScreen(
                             androidx.tv.material3.Text("Следующая серия")
                         }
                     }
-                    if (audioLanguages.isNotEmpty()) {
+                    if (pb.audioLanguages.isNotEmpty()) {
                         androidx.tv.material3.Button(onClick = { showAudioPicker = !showAudioPicker }) {
                             androidx.tv.material3.Text("Аудио")
                         }
                     }
-                    if (textLanguages.isNotEmpty()) {
+                    if (pb.textLanguages.isNotEmpty()) {
                         androidx.tv.material3.Button(onClick = { showTextPicker = !showTextPicker }) {
                             androidx.tv.material3.Text("Субтитры")
                         }
                     }
                     androidx.tv.material3.Button(onClick = {
-                        sleepTimerMinutes = when (sleepTimerMinutes) {
-                            null -> 15
-                            15 -> 30
-                            30 -> 45
-                            45 -> 60
-                            else -> null
-                        }
+                        session.setSleepTimer(
+                            when (pb.sleepTimerMinutes) {
+                                null -> 15
+                                15 -> 30
+                                30 -> 45
+                                45 -> 60
+                                else -> null
+                            }
+                        )
                     }) {
                         androidx.tv.material3.Text(
-                            sleepTimerMinutes?.let { "Сон: ${it}м" } ?: "Таймер сна"
+                            pb.sleepTimerMinutes?.let { "Сон: ${it}м" } ?: "Таймер сна"
                         )
                     }
                     androidx.tv.material3.Button(onClick = viewModel::toggleBookmark) {
@@ -594,13 +513,7 @@ fun TvVideoScreen(
                 val seriesSeasons = state.seriesSeasons
                 val selectedSeason = state.selectedSeriesSeason ?: seriesSeasons.firstOrNull()
                 val seriesEpisodesForSeason = remember(state.seriesEpisodes, selectedSeason) {
-                    state.seriesEpisodes
-                        .filter { v ->
-                            val info = parseSeriesInfo(v.title)
-                            val season = info?.season ?: v.season ?: 1
-                            season == selectedSeason
-                        }
-                        .sortedBy { parseSeriesInfo(it.title)?.episode ?: Int.MAX_VALUE }
+                    episodesForSeason(state.seriesEpisodes, selectedSeason)
                 }
                 if (seriesEpisodesForSeason.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
@@ -624,11 +537,11 @@ fun TvVideoScreen(
                     Spacer(Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(seriesEpisodesForSeason, key = { it.id }) { video ->
-                            val info = parseSeriesInfo(video.title)
+                            val episode = episodeOf(video)
                             androidx.tv.material3.Button(onClick = { onVideoClick(video.id) }) {
                                 Column {
                                     androidx.tv.material3.Text(
-                                        "${info?.episode ?: video.title} серия",
+                                        "${episode ?: video.title} серия",
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )
@@ -642,13 +555,13 @@ fun TvVideoScreen(
                     }
                 }
 
-                if (showQualityPicker && qualities.isNotEmpty()) {
+                if (showQualityPicker && pb.qualities.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        qualities.forEach { option ->
+                        pb.qualities.forEach { option ->
                             androidx.tv.material3.Button(onClick = {
                                 selectedQualityHeight = option.height
-                                qualityController.select(option.height)
+                                session.setQuality(option.height)
                                 showQualityPicker = false
                             }) {
                                 androidx.tv.material3.Text(
@@ -659,13 +572,13 @@ fun TvVideoScreen(
                         }
                     }
                 }
-                if (showAudioPicker && audioLanguages.isNotEmpty()) {
+                if (showAudioPicker && pb.audioLanguages.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        audioLanguages.forEach { lang ->
+                        pb.audioLanguages.forEach { lang ->
                             androidx.tv.material3.Button(onClick = {
                                 selectedAudioLanguage = lang
-                                qualityController.selectAudioLanguage(lang)
+                                session.setAudioLanguage(lang)
                                 showAudioPicker = false
                             }) {
                                 androidx.tv.material3.Text(
@@ -676,22 +589,22 @@ fun TvVideoScreen(
                         }
                     }
                 }
-                if (showTextPicker && textLanguages.isNotEmpty()) {
+                if (showTextPicker && pb.textLanguages.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         androidx.tv.material3.Button(onClick = {
                             selectedTextLanguage = null
-                            qualityController.selectTextLanguage(null)
+                            session.setTextLanguage(null)
                             showTextPicker = false
                         }) {
                             androidx.tv.material3.Text(
                                 if (selectedTextLanguage == null) "• ВЫКЛ" else "ВЫКЛ"
                             )
                         }
-                        textLanguages.forEach { lang ->
+                        pb.textLanguages.forEach { lang ->
                             androidx.tv.material3.Button(onClick = {
                                 selectedTextLanguage = lang
-                                qualityController.selectTextLanguage(lang)
+                                session.setTextLanguage(lang)
                                 showTextPicker = false
                             }) {
                                 androidx.tv.material3.Text(
@@ -706,7 +619,7 @@ fun TvVideoScreen(
         }
     }
 
-    val countdown = nextEpisodeCountdown
+    val countdown = pb.autoplayCountdownSec
     if (countdown != null && state.nextVideoId != null) {
         Box(
             Modifier
@@ -722,13 +635,10 @@ fun TvVideoScreen(
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    androidx.tv.material3.Button(onClick = {
-                        nextEpisodeCountdown = null
-                        state.nextVideoId?.let { onVideoClick(it) }
-                    }) {
+                    androidx.tv.material3.Button(onClick = session::playNextNow) {
                         androidx.tv.material3.Text("Смотреть сейчас")
                     }
-                    androidx.tv.material3.Button(onClick = { nextEpisodeCountdown = null }) {
+                    androidx.tv.material3.Button(onClick = session::cancelAutoplay) {
                         androidx.tv.material3.Text("Отмена")
                     }
                 }
@@ -736,7 +646,7 @@ fun TvVideoScreen(
         }
     }
 
-    if (showStillWatching) {
+    if (pb.stillWatchingDue) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -751,15 +661,12 @@ fun TvVideoScreen(
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    androidx.tv.material3.Button(onClick = {
-                        showStillWatching = false
-                        stillWatchingAck++
-                    }) {
+                    androidx.tv.material3.Button(onClick = session::confirmStillWatching) {
                         androidx.tv.material3.Text("Да")
                     }
                     androidx.tv.material3.Button(onClick = {
                         player.pause()
-                        showStillWatching = false
+                        session.confirmStillWatching()
                     }) {
                         androidx.tv.material3.Text("Стоп")
                     }
@@ -775,6 +682,9 @@ fun TvVideoScreen(
         if (state.details == null) {
             TvErrorBox(message = error, onRetry = viewModel::load)
         }
+    }
+    if (pb.status == PlaybackStatus.ERROR && state.details != null) {
+        TvErrorBox(message = pb.errorMessage ?: "Ошибка воспроизведения", onRetry = session::retry)
     }
 }
 

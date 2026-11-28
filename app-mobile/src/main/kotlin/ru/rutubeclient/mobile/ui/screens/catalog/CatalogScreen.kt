@@ -47,6 +47,7 @@ import coil.compose.AsyncImage
 import ru.rutubeclient.core.model.CatalogEntry
 import ru.rutubeclient.core.model.CatalogTab
 import ru.rutubeclient.core.model.TvShow
+import ru.rutubeclient.core.presentation.CatalogViewModel
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.LoadingBox
 import ru.rutubeclient.mobile.ui.components.PullToRefreshIndicator

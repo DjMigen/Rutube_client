@@ -1,4 +1,4 @@
-package ru.rutubeclient.mobile.ui.screens.catalog
+package ru.rutubeclient.core.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,10 +8,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import ru.rutubeclient.core.model.CatalogEntry
 import ru.rutubeclient.core.model.CatalogTab
-import ru.rutubeclient.core.model.Page
 import ru.rutubeclient.core.network.CatalogLoader
 import ru.rutubeclient.core.network.RuTubeApi
 
+/** Catalog (series/movies/cartoons/anime) shared by mobile and TV. */
 class CatalogViewModel(private val api: RuTubeApi) : ViewModel() {
     private val loader = CatalogLoader(api)
 
@@ -79,5 +79,4 @@ class CatalogViewModel(private val api: RuTubeApi) : ViewModel() {
                 }
         }
     }
-
 }

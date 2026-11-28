@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ru.rutubeclient.core.presentation.HomeViewModel
 import ru.rutubeclient.mobile.ui.components.ContinueWatchingRow
 import ru.rutubeclient.mobile.ui.components.ErrorBox
 import ru.rutubeclient.mobile.ui.components.HeroBanner

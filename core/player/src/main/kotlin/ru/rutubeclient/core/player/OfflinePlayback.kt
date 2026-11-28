@@ -30,16 +30,6 @@ interface OfflineContentProvider {
 }
 
 /**
- * Shared holder configured by the app at startup. [PlaybackService] is created
- * by the system, so it cannot receive constructor parameters — it reads the
- * provider from here instead.
- */
-object PlaybackEnvironment {
-    @Volatile
-    var offlineProvider: OfflineContentProvider? = null
-}
-
-/**
  * Routes playback: downloaded videos are served from the downloads cache
  * (works fully offline), everything else streams through the usual path.
  */

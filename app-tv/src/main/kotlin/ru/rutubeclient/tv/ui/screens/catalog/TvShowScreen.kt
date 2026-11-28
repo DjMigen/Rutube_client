@@ -32,6 +32,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import ru.rutubeclient.core.model.TvShow
+import ru.rutubeclient.core.presentation.TvShowViewModel
 import ru.rutubeclient.tv.ui.TvErrorBox
 import ru.rutubeclient.tv.ui.TvLoadingBox
 import ru.rutubeclient.tv.ui.TvVideoCard

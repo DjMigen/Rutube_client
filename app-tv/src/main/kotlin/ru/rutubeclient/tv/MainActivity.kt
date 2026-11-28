@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,11 +26,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import ru.rutubeclient.core.player.PlaybackSession
+import ru.rutubeclient.core.player.StreamResolver
+import ru.rutubeclient.core.presentation.CatalogViewModel
+import ru.rutubeclient.core.presentation.ChannelViewModel
+import ru.rutubeclient.core.presentation.HomeViewModel
+import ru.rutubeclient.core.presentation.Routes
+import ru.rutubeclient.core.presentation.TvShowViewModel
+import ru.rutubeclient.core.presentation.vmFactory
 import ru.rutubeclient.tv.ui.TvTheme
 import ru.rutubeclient.tv.ui.screens.TvChannelScreen
-import ru.rutubeclient.tv.ui.screens.TvChannelViewModel
 import ru.rutubeclient.tv.ui.screens.TvHomeScreen
-import ru.rutubeclient.tv.ui.screens.TvHomeViewModel
 import ru.rutubeclient.tv.ui.screens.TvLibraryScreen
 import ru.rutubeclient.tv.ui.screens.TvLibraryViewModel
 import ru.rutubeclient.tv.ui.screens.TvSearchScreen
@@ -38,28 +46,7 @@ import ru.rutubeclient.tv.ui.screens.TvSubscriptionsViewModel
 import ru.rutubeclient.tv.ui.screens.TvVideoScreen
 import ru.rutubeclient.tv.ui.screens.TvVideoViewModel
 import ru.rutubeclient.tv.ui.screens.catalog.TvCatalogScreen
-import ru.rutubeclient.tv.ui.screens.catalog.TvCatalogViewModel
 import ru.rutubeclient.tv.ui.screens.catalog.TvShowScreen
-import ru.rutubeclient.tv.ui.screens.catalog.TvShowViewModel
-
-object TvRoutes {
-    const val HOME = "home"
-    const val SEARCH = "search"
-    const val SUBSCRIPTIONS = "subscriptions"
-    const val LIBRARY = "library"
-    const val CATALOG = "catalog"
-    const val TV_SHOW = "tvshow/{tvId}"
-    const val VIDEO = "video/{videoId}?fromStart={fromStart}&next={next}"
-    const val CHANNEL = "channel/{authorId}?name={name}"
-
-    fun video(id: String, fromStart: Boolean = false, next: String? = null): String {
-        val base = "video/$id?fromStart=$fromStart"
-        return if (next.isNullOrEmpty()) base else "$base&next=$next"
-    }
-    fun tvShow(id: Int) = "tvshow/$id"
-    fun channel(authorId: Long, name: String) =
-        "channel/$authorId?name=${android.net.Uri.encode(name)}"
-}
 
 class MainActivity : ComponentActivity() {
 
@@ -67,6 +54,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0xFFD9D9D9.toInt()))
         handleVoiceSearch(intent)
         setContent {
             TvTheme {
@@ -90,11 +78,11 @@ class MainActivity : ComponentActivity() {
 private data class TopLevel(val route: String, val label: String)
 
 private val topLevel = listOf(
-    TopLevel(TvRoutes.HOME, "Главная"),
-    TopLevel(TvRoutes.SEARCH, "Поиск"),
-    TopLevel(TvRoutes.SUBSCRIPTIONS, "Подписки"),
-    TopLevel(TvRoutes.LIBRARY, "Библиотека"),
-    TopLevel(TvRoutes.CATALOG, "Каталог"),
+    TopLevel(Routes.HOME, "Главная"),
+    TopLevel(Routes.SEARCH, "Поиск"),
+    TopLevel(Routes.SUBSCRIPTIONS, "Подписки"),
+    TopLevel(Routes.LIBRARY, "Библиотека"),
+    TopLevel(Routes.CATALOG, "Каталог"),
 )
 
 @Composable
@@ -104,7 +92,7 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
     val currentRoute = backStackEntry?.destination?.route
     val isTopLevel = currentRoute in topLevel.map { it.route }
 
-    Row(Modifier.fillMaxSize()) {
+    Row(Modifier.fillMaxSize().background(androidx.tv.material3.MaterialTheme.colorScheme.background)) {
         // Left navigation rail (always visible on top-level screens).
         if (isTopLevel) {
             Column(Modifier.width(200.dp).padding(24.dp)) {
@@ -134,82 +122,87 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
 
         NavHost(
             navController = navController,
-            startDestination = TvRoutes.HOME,
+            startDestination = Routes.HOME,
             modifier = Modifier.weight(1f),
         ) {
-            composable(TvRoutes.HOME) {
+            composable(Routes.HOME) {
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvHomeViewModel = viewModel(factory = tvVmFactory {
-                    TvHomeViewModel(container.api, container.repository)
+                val vm: HomeViewModel = viewModel(factory = vmFactory {
+                    HomeViewModel(
+                        container.api,
+                        container.repository,
+                        categoryLimit = 5,
+                        alwaysRecommendations = true,
+                    )
                 })
                 TvHomeScreen(
                     vm,
-                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
-                    onWatchFromStart = { navController.navigate(TvRoutes.video(it, fromStart = true)) },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                    onWatchFromStart = { navController.navigate(Routes.video(it, fromStart = true)) },
                 )
             }
-            composable(TvRoutes.SEARCH) {
+            composable(Routes.SEARCH) {
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvSearchViewModel = viewModel(factory = tvVmFactory {
+                val vm: TvSearchViewModel = viewModel(factory = vmFactory {
                     TvSearchViewModel(container.api)
                 })
                 LaunchedEffect(voiceSearchQuery) {
                     voiceSearchQuery?.let { vm.setQuery(it) }
                 }
-                TvSearchScreen(vm, onVideoClick = { navController.navigate(TvRoutes.video(it)) })
+                TvSearchScreen(vm, onVideoClick = { navController.navigate(Routes.video(it)) })
             }
-            composable(TvRoutes.SUBSCRIPTIONS) {
+            composable(Routes.SUBSCRIPTIONS) {
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvSubscriptionsViewModel = viewModel(factory = tvVmFactory {
+                val vm: TvSubscriptionsViewModel = viewModel(factory = vmFactory {
                     TvSubscriptionsViewModel(container.repository)
                 })
                 TvSubscriptionsScreen(
                     vm,
-                    onChannelClick = { id, name -> navController.navigate(TvRoutes.channel(id, name)) },
+                    onChannelClick = { id, name -> navController.navigate(Routes.channel(id, name)) },
                 )
             }
-            composable(TvRoutes.LIBRARY) {
+            composable(Routes.LIBRARY) {
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvLibraryViewModel = viewModel(factory = tvVmFactory {
+                val vm: TvLibraryViewModel = viewModel(factory = vmFactory {
                     TvLibraryViewModel(container.repository)
                 })
                 TvLibraryScreen(
                     vm,
-                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
                 )
             }
-            composable(TvRoutes.CATALOG) {
+            composable(Routes.CATALOG) {
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvCatalogViewModel = viewModel(factory = tvVmFactory {
-                    TvCatalogViewModel(container.api)
+                val vm: CatalogViewModel = viewModel(factory = vmFactory {
+                    CatalogViewModel(container.api)
                 })
                 TvCatalogScreen(
                     vm,
-                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
-                    onTvShowClick = { navController.navigate(TvRoutes.tvShow(it)) },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
+                    onTvShowClick = { navController.navigate(Routes.tvShow(it)) },
                 )
             }
             composable(
-                TvRoutes.TV_SHOW,
+                Routes.TV_SHOW,
                 arguments = listOf(navArgument("tvId") { type = NavType.IntType }),
             ) { entry ->
                 val tvId = entry.arguments?.getInt("tvId") ?: return@composable
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
                 val vm: TvShowViewModel = viewModel(
                     key = "tvshow-$tvId",
-                    factory = tvVmFactory {
+                    factory = vmFactory {
                         TvShowViewModel(tvId, container.api)
                     },
                 )
                 TvShowScreen(
                     viewModel = vm,
                     onVideoClick = { videoId, nextId ->
-                        navController.navigate(TvRoutes.video(videoId, next = nextId))
+                        navController.navigate(Routes.video(videoId, next = nextId))
                     },
                 )
             }
             composable(
-                TvRoutes.VIDEO,
+                Routes.VIDEO,
                 arguments = listOf(
                     navArgument("videoId") { type = NavType.StringType },
                     navArgument("fromStart") {
@@ -226,10 +219,11 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
                 val videoId = entry.arguments?.getString("videoId") ?: return@composable
                 val fromStart = entry.arguments?.getBoolean("fromStart") ?: false
                 val next = entry.arguments?.getString("next")
-                val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val container = TvApp.container(context)
                 val vm: TvVideoViewModel = viewModel(
-                    key = "video-$videoId-$fromStart-$next",
-                    factory = tvVmFactory {
+                    key = Routes.videoKey(videoId, fromStart, next),
+                    factory = vmFactory {
                         TvVideoViewModel(
                             videoId,
                             container.api,
@@ -239,19 +233,33 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
                         )
                     },
                 )
+                // One playback session per screen visit (see docs/adr/0001).
+                // TV is streaming-only: no offline provider.
+                val session = remember {
+                    PlaybackSession.create(
+                        context = context,
+                        streamResolver = StreamResolver { id ->
+                            container.api.getStreamInfo(id).hlsUrl
+                        },
+                    )
+                }
+                androidx.compose.runtime.DisposableEffect(session) {
+                    onDispose { session.close() }
+                }
                 TvVideoScreen(
                     vm,
+                    session = session,
                     onBack = {
-                        navController.navigate(TvRoutes.HOME) {
-                            popUpTo(TvRoutes.HOME) { inclusive = true }
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.HOME) { inclusive = true }
                             launchSingleTop = true
                         }
                     },
-                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
                 )
             }
             composable(
-                TvRoutes.CHANNEL,
+                Routes.CHANNEL,
                 arguments = listOf(
                     navArgument("authorId") { type = NavType.LongType },
                     navArgument("name") {
@@ -264,28 +272,24 @@ fun TvNavHost(voiceSearchQuery: String? = null) {
                 val authorId = entry.arguments?.getLong("authorId") ?: return@composable
                 val name = entry.arguments?.getString("name").orEmpty()
                 val container = TvApp.container(androidx.compose.ui.platform.LocalContext.current)
-                val vm: TvChannelViewModel = viewModel(
+                val vm: ChannelViewModel = viewModel(
                     key = "channel-$authorId",
-                    factory = tvVmFactory {
-                        TvChannelViewModel(authorId, name, container.api, container.repository)
+                    factory = vmFactory {
+                        ChannelViewModel(
+                            authorId,
+                            name,
+                            container.api,
+                            container.repository,
+                            pagination = false,
+                        )
                     },
                 )
                 TvChannelScreen(
                     viewModel = vm,
-                    onVideoClick = { navController.navigate(TvRoutes.video(it)) },
+                    onVideoClick = { navController.navigate(Routes.video(it)) },
                 )
             }
         }
     }
 }
 
-private inline fun <reified VM : androidx.lifecycle.ViewModel> tvVmFactory(
-    crossinline create: () -> VM,
-): androidx.lifecycle.ViewModelProvider.Factory =
-    object : androidx.lifecycle.ViewModelProvider.Factory {
-        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-            require(modelClass.isAssignableFrom(VM::class.java))
-            @Suppress("UNCHECKED_CAST")
-            return create() as T
-        }
-    }

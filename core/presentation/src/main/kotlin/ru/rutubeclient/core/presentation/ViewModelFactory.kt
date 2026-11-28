@@ -1,4 +1,4 @@
-package ru.rutubeclient.mobile.di
+package ru.rutubeclient.core.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider

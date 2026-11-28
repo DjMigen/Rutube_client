@@ -62,10 +62,8 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import ru.rutubeclient.core.model.Video
 import ru.rutubeclient.core.player.PlayerFactory
+import ru.rutubeclient.core.presentation.ContinueItem
 import ru.rutubeclient.mobile.ui.formatDuration
-
-/** A video with its playback progress (0..1) for the "Continue watching" row. */
-data class ContinueItem(val video: Video, val progress: Float)
 
 /**
  * Large featured banner with backdrop, title, description and action buttons.

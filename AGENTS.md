@@ -1,169 +1,125 @@
 # RuTube Client — Agent Notes
 
-## Project overview
-A full-featured, ad-free RuTube client for Android (phone/tablet) and Android TV.
-It is built as a multi-module Android project that uses RuTube's internal website
-API and a custom Media3/ExoPlayer-based player. No account login is required:
-subscriptions, history, bookmarks and downloads are stored locally on the device.
-
-## Tech stack
-- **Language / UI**: Kotlin, Jetpack Compose, Compose for TV
-- **Build**: Gradle 8.11.1, AGP 8.7.3, Kotlin 2.0.21
-- **Player**: Media3 / ExoPlayer 1.9.4 (HLS, MediaSessionService, DownloadManager)
-- **Networking**: OkHttp + kotlinx.serialization
-- **Local storage**: Room (history, subscriptions, bookmarks, search history, downloads metadata)
-- **Settings**: DataStore Preferences
-- **Cast**: Google Cast SDK (optional, mobile only)
-- **Images**: Coil
-- **Min SDK**: 26 (Android 8.0)
-- **Compile / Target SDK**: 35
-- **DI**: manual (`AppContainer` / `TvAppContainer`)
-
-## Module structure
-```
-core:model          Pure Kotlin data models (Video, VideoDetails, Comment, TvShow, etc.)
-core:network        RuTube API client + DTOs, unit-tested against real responses
-core:database       Room database + LibraryRepository
-core:player         ExoPlayer factory, MediaSession background service,
-                    offline-routing media source, quality controller
-app-mobile          Phone/tablet app (Compose, navigation, catalog, downloads, cast, PiP)
-app-tv              Android TV app (Compose for TV, catalog, D-pad player controls)
-```
-
-## Verified RuTube endpoints
-The client talks to RuTube's public website API. The following endpoints were
-verified against the live service and are used by the app:
-
-| Feature | Endpoint |
-|---|---|
-| Home feed | `GET /api/v2/video/recommendation/main?page=N` |
-| Categories list | `GET /api/video/category/` |
-| Category videos | `GET /api/video/category/{id}/?page=N` |
-| Search | `GET /api/search/video/?query=...&page=N` |
-| Video details | `GET /api/video/{id}/` |
-| Stream URL | `GET /api/play/options/{id}/?format=json` |
-| Comments | `GET /api/comments/video/{id}/?page=N` |
-| Channel videos | `GET /api/video/person/{authorId}/?page=N` |
-| TV shows / series catalog | `GET /api/metainfo/tv/?page=N` |
-| TV show details | `GET /api/metainfo/tv/{id}/` |
-| TV show seasons | `GET /api/metainfo/tv/{id}/season` |
-| TV show episodes | `GET /api/metainfo/tv/{id}/video?season=N&page=N` |
-| Top movies | `GET /api/v2/video/recommendation/main/top_movie?limit=20&page=N` |
-| Top serials | `GET /api/v2/video/recommendation/main/top_serial?limit=20&page=N` |
-| Top cartoons | `GET /api/v2/video/recommendation/main/top_cartoon?limit=20&page=N` |
-| Top anime | `GET /api/v2/video/recommendation/main/top_anime?limit=20&page=N` |
-
-The stream URL is a signed HLS master-playlist (`video_balancer.m3u8`). It is
-short-lived and is re-resolved right before playback and again when the CDN
-answers HTTP 403 (signature expired).
-
-## Why it's ad-free
-Ads are delivered to RuTube's official player through the `advert` field of the
-play/options response (AdFox VAST tags). This client never requests those tags;
-it plays the HLS stream directly with its own player. No ad-blocking logic is
-needed.
+## Overview
+Multi-module Android app: ad-free RuTube client for phones/tablets and Android TV.
+No login — subscriptions, history, bookmarks, downloads are stored locally (Room).
+Uses RuTube's public website API and a custom Media3/ExoPlayer player.
 
 ## Build & install
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 ./gradlew assembleDebug
 ```
-Outputs:
-- `app-mobile/build/outputs/apk/debug/app-mobile-debug.apk`
-- `app-tv/build/outputs/apk/debug/app-tv-debug.apk`
-
-Install:
-```bash
-adb install app-mobile/build/outputs/apk/debug/app-mobile-debug.apk
-adb install app-tv/build/outputs/apk/debug/app-tv-debug.apk
-```
+APKs: `app-mobile/build/outputs/apk/debug/app-mobile-debug.apk`,
+`app-tv/build/outputs/apk/debug/app-tv-debug.apk`.
+Install: `adb install <apk>`.
 
 ## Tests
-Run the network-layer tests (real captured API responses):
 ```bash
-./gradlew :core:network:test
+# model heuristics + network DTOs + playback session (mocked player, virtual time)
+./gradlew :core:model:test :core:network:test :core:player:testDebugUnitTest
+# single test class
+./gradlew :core:player:testDebugUnitTest --tests "ru.rutubeclient.core.player.PlaybackSessionTest"
 ```
+Only `core:model`, `core:network` and `core:player` have tests. `core:model`/
+`core:network` are pure JVM modules (fast, no Android runtime);
+`core:player`/`core:database`/`core:presentation` are Android libs.
 
-## Smoke test performed
-Launched on an Android 35 (Pixel 6) emulator: home feed loaded with real RuTube
-content, navigation between sections worked, and tapping a video opened the
-player with playback started successfully. No runtime crashes.
+## Module boundaries
+- `core:model` — pure Kotlin data models (`Video`, `VideoDetails`, `TvShow`, …)
+  plus series heuristics (`Series.kt`: `parseSeriesInfo`, `seasonOf`, `episodeOf`,
+  `episodesForSeason`) — the single source of truth for episode filtering/sorting;
+  screens and `SeriesDiscovery` must use it instead of re-deriving rules.
+- `core:network` — `RuTubeApi` (interface + `HttpRuTubeApi`) + DTOs + loaders
+  (`HomeFeedLoader`, `CatalogLoader`, `SeriesDiscovery`, `VideoSession`-free).
+- `core:database` — Room + `LibraryRepository` (single entry point for all local data).
+- `core:player` — `PlaybackSession` (playback policy), `PlayerFactory`, offline-routing
+  media source, `QualityController`.
+- `core:presentation` — ViewModels shared by both apps (`HomeViewModel`,
+  `CatalogViewModel`, `TvShowViewModel`, `ChannelViewModel`, `ContinueItem`),
+  plus shared `Routes` (nav strings + `videoKey` — always build the video
+  ViewModel key through it) and `vmFactory`. Platform deltas are constructor
+  params (`categoryLimit`/`alwaysRecommendations`, `pagination`), not subclasses.
+- `app-mobile` — phone/tablet UI, navigation, downloads, cast.
+- `app-tv` — TV UI, D-pad player controls.
 
-Catalog feature smoke-tested on a Samsung Galaxy Tab A9 (SM-X115): the new
-"Каталог" tab loaded series/TV shows with posters, switching to "Фильмы",
-"Мультики" and "Аниме" loaded curated recommendation videos, tapping a series
-opened the detail screen with episodes, and tapping an episode started playback.
-Auto-fullscreen on landscape rotation and manual fullscreen button were also
-verified on the video screen.
+Entrypoints: `app-mobile/.../MainActivity.kt` (`AppNavHost`),
+`app-tv/.../MainActivity.kt` (`TvNavHost`). DI is manual: `AppContainer` (5 vals)
+and `TvAppContainer` (3 vals), constructed in `Application.onCreate`. ViewModels are
+built per nav-destination in MainActivity (~17 sites); the video route keys its
+ViewModel with `"video-$id-$fromStart-$next"` — dropping that key silently reuses
+a stale ViewModel.
 
-## Runtime notes
-- **Card clicks**: use `Modifier.clickable(role = Role.Button)` on Material3
-  cards.
-- **Netflix-style home**: the mobile home uses a hero banner + horizontal
-  rows (snap-fling `LazyRow`) instead of a grid, plus a "Продолжить просмотр"
-  row derived from local history with a progress bar. The hero's "Мой список"
-  toggles a bookmark. `HomeViewModel` takes `api` + `repository`. The TV home
-  mirrors this with `TvHeroBanner` and `TvContinueWatchingRow`. Components
-  live in `mobile/ui/components/NetflixComponents.kt` and `tv/ui/TvComponents.kt`.
-- **Pull-to-refresh (mobile)**: custom `PullToRefresh` modifier in
-  `mobile/ui/components/PullToRefresh.kt` (nestedScroll-based, not the
-  experimental PullToRefreshBox which interfered with child clicks). The
-  indicator is touch-transparent so clicks pass through. Applied to Home and
-  Channel screens only.
-- **Fullscreen playback (mobile)**: the video screen has a fullscreen toggle
-  overlay in the top-right corner of the player. The icon is shown only while
-  the ExoPlayer controller is visible and hides together with it. Entering
-  fullscreen manually locks the activity to landscape, hides the system bars
-  and fills the screen. Back or the same button restores portrait. Rotating
-  the device to landscape automatically enters fullscreen; rotating back to
-  portrait automatically exits fullscreen unless fullscreen was enabled
-  manually.
-- **Background audio / PiP (mobile)**: `PlaybackService` owns the player and the
-  media session; UI connects via `MediaController`. The video screen disconnects
-  the controller on navigation back, but the service keeps playing when the app
-  is backgrounded or in PiP.
-- **Downloads (mobile)**: Media3 `DownloadManager` with `AppDownloadService`. A
-  fresh signed HLS URL is resolved before each download; exactly one video
-  rendition is selected via `TrackSelectionParameters`. Completed downloads are
-  routed to the downloads cache and played offline.
-- **Quality selection**: uses ExoPlayer track-selection parameters; works both
-  for streaming and downloaded HLS.
-- **Cast**: optional; guarded so the app works without Google Play services.
-- **TV player**: uses a local ExoPlayer and custom D-pad controls; it does not
-  rely on the playback service because background playback is not required on TV.
-- **Voice search (TV)**: `MainActivity` handles `ACTION_SEARCH` / `SearchManager.QUERY`
-  and forwards the query to `TvSearchScreen`.
-- **Autoplay next episode**: series episodes pass `nextVideoId` via the video
-  route (`video/{id}?next={nextId}`). When playback ends, a 5-second countdown
-  overlay offers "Смотреть сейчас" / "Отмена"; a "Следующая серия" button is
-  also available in the controls (mobile + TV).
-- **"Потому что вы смотрели X"**: home rows on mobile and TV load recent
-  channel videos for the last two history entries.
-- **Subtitles / audio tracks**: selected through ExoPlayer `currentTracks` and
-  `TrackSelectionParameters`; buttons appear when the HLS manifest exposes
-  multiple text/audio tracks.
-- **Hero muted preview**: the hero banner resolves the featured video's HLS URL
-  and plays it muted, looping, with a 2-second delay; the static backdrop fades
-  out once the first frame renders.
-- **"Вы всё ещё смотрите?"**: after 3 hours of continuous playback an
-  AlertDialog (mobile) or full-screen overlay (TV) asks the user to continue;
-  "Стоп" pauses the player.
-- **Smart downloads**: downloading a series episode also queues the next episode
-  (mobile).
-- **Ratings**: thumbs-up / thumbs-down buttons on the video screen persist to
-  Room via `RatingEntity` (mobile + TV).
-- **Live search suggestions**: the mobile search field shows matching recent
-  local queries as chips while typing.
+## Architecture constraints (read before editing)
+- **Manual DI, no Hilt/Koin.** Don't introduce a DI framework.
+- **Shared ViewModels live in `core:presentation`** — fix bugs there once, both
+  apps get the fix. Only genuinely platform-specific VMs stay in the apps
+  (Search, Library, Subscriptions, Video).
+- **`PlaybackSession` owns the player** and all playback policy (stream attach,
+  resume, retry-once on 403, 5s position saves, autoplay, still-watching, sleep
+  timer). Screens render `state`/`events` and send intents; they never program
+  Media3 policy. Created per nav-destination, closed on dispose. StreamResolver
+  is wired in MainActivity. See `docs/adr/0001`. **Do not reintroduce a
+  shared/long-lived player or background playback** (deliberately removed in
+  `06d06ac`).
+- **Offline routing**: `PlayerFactory.create(context, provider)`. Mobile passes
+  `DownloadsManager` (implements `OfflineContentProvider`); TV passes `null`.
+  `PlaybackEnvironment` (global var) was removed — pass the provider explicitly.
+- **Signed HLS URLs expire.** Re-resolve before playback and on HTTP 403. Enforced
+  in `PlaybackSession` and in `DownloadsManager` (re-resolves before each download).
+- **Downloads**: Media3 `DownloadManager` + `AppDownloadService`; one rendition
+  selected via `TrackSelectionParameters`; smart download queues the next episode.
+  `AppDownloadService` resolving deps via `(application as App).container` is the
+  sanctioned service-locator pattern for system-created components — don't add
+  more such lookups elsewhere (screens/VMs get deps via constructors).
+- **Orientation**: `configChanges` in both manifests → composition survives
+  rotation; fullscreen policy lives in `VideoScreen`.
+- **Cast** is optional and guarded for missing Play Services.
+- **TV voice search**: `MainActivity` handles `ACTION_SEARCH`/`SearchManager.QUERY`
+  and forwards to `TvSearchScreen`.
+- **Autoplay route param**: series pass `nextVideoId` via `video/{id}?next={nextId}`.
 
-## What is NOT implemented
-- Login / account sync (everything is local by design).
-- Remote search suggestions (local search history is used instead).
-- Push notifications for subscriptions.
+## Verified RuTube endpoints
+| Feature | Endpoint |
+|---|---|
+| Home feed | `GET /api/v2/video/recommendation/main?page=N` |
+| Categories | `GET /api/video/category/` |
+| Category videos | `GET /api/video/category/{id}/?page=N` |
+| Search | `GET /api/search/video/?query=...&page=N` |
+| Video details | `GET /api/video/{id}/` |
+| Stream URL | `GET /api/play/options/{id}/?format=json` |
+| Comments | `GET /api/comments/video/{id}/?page=N` |
+| Channel videos | `GET /api/video/person/{authorId}/?page=N` |
+| TV shows | `GET /api/metainfo/tv/?page=N` |
+| TV show details | `GET /api/metainfo/tv/{id}/` |
+| TV seasons | `GET /api/metainfo/tv/{id}/season` |
+| TV episodes | `GET /api/metainfo/tv/{id}/video?season=N&page=N` |
+| Top movies/serials/cartoons/anime | `GET /api/v2/video/recommendation/main/top_{movie,serial,cartoon,anime}?limit=20&page=N` |
 
-## Architecture decisions
-- `core:model` and `core:network` are pure Kotlin JVM modules so the API layer
-  can be unit-tested quickly without an Android runtime.
-- Manual DI instead of Hilt/Koin to keep the build simple and avoid KSP
-  version friction.
-- Two separate `app` modules share the `core` modules; TV-specific UI and
-  player controls live in `app-tv`.
+Stream URL is a short-lived signed HLS master playlist (`video_balancer.m3u8`).
+
+## Ad-free (one line)
+Ads come via the `advert` field (AdFox VAST) of play/options; this client never
+requests those tags and plays the HLS stream directly. No ad-blocking logic exists.
+
+## Not implemented
+Login/account sync, remote search suggestions, push notifications for subscriptions.
+
+## Testing quirks
+- `core:network` tests run against captured JSON responses (mockwebserver).
+- `core:player` tests use mockk + turbine + virtual time. Session scopes must be
+  parented to `backgroundScope` (see `PlaybackSessionTest.newSession`) so the
+  infinite save loop is cancelled at test end instead of stalling `runTest`.
+- VMs/screens are untested: they take concrete `LibraryRepository`/`DownloadsManager`.
+
+## Docs
+- `GLOSSARY.md` — domain terms.
+- `docs/adr/` — ADR-0001: playback session owns the screen player; episode
+  switching stays navigation-based.
+
+## Runtime gotchas
+- **Card clicks**: `Modifier.clickable(role = Role.Button)` on Material3 cards.
+- **Pull-to-refresh (mobile)**: custom `PullToRefresh` modifier (nestedScroll);
+  indicator is touch-transparent. Home + Channel only.
+- **Hero muted preview**: resolves the featured video's HLS URL, plays muted
+  looping after a 2s delay; backdrop fades once the first frame renders.
