@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadHelper
 import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadService
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -98,14 +99,30 @@ class DownloadsManager(
         withContext(Dispatchers.IO) {
             runCatching {
                 val stream = api.getStreamInfo(video.id)
-                val helper = DownloadHelper.forMediaItem(
+                val dataSourceFactory = DefaultDataSource.Factory(
                     context,
-                    PlayerFactory.mediaItem(stream.hlsUrl, video.id),
-                    DefaultDataSource.Factory(
-                        context,
-                        OkHttpDataSource.Factory(PlayerFactory.newHttpClient()),
-                    ),
+                    OkHttpDataSource.Factory(PlayerFactory.newHttpClient()),
                 )
+                val mediaItem = PlayerFactory.mediaItem(stream.hlsUrl, video.id)
+
+                // Constrain the rendition at helper construction time — this is
+                // what actually limits a HLS master download to the requested
+                // quality. "Best available" (0) is left unconstrained so the
+                // highest rendition wins.
+                val helper = if (qualityHeight > 0) {
+                    DownloadHelper.forMediaItem(
+                        mediaItem,
+                        // "At most this height" — selects the best rendition up to
+                        // the requested quality. "Best available" (0) is unconstrained.
+                        TrackSelectionParameters.Builder(context)
+                            .setMaxVideoSize(Integer.MAX_VALUE, qualityHeight)
+                            .build(),
+                        DefaultRenderersFactory(context),
+                        dataSourceFactory,
+                    )
+                } else {
+                    DownloadHelper.forMediaItem(context, mediaItem, dataSourceFactory)
+                }
                 try {
                     suspendCancellableCoroutine { cont ->
                         helper.prepare(object : DownloadHelper.Callback {
@@ -118,13 +135,6 @@ class DownloadsManager(
                     }
                     val targetHeight =
                         if (qualityHeight > 0) qualityHeight else maxVideoHeight(helper)
-                    val params = TrackSelectionParameters.Builder()
-                        .setMinVideoSize(0, targetHeight)
-                        .setMaxVideoSize(Int.MAX_VALUE, targetHeight)
-                        .build()
-                    for (p in 0 until helper.periodCount) {
-                        helper.addTrackSelection(p, params)
-                    }
                     val request = helper.getDownloadRequest(video.id, null)
                     repository.upsertDownload(
                         DownloadEntity(
