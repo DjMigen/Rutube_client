@@ -114,20 +114,21 @@ class TvVideoViewModel(
                             isLoading = false,
                         )
                     }
-                    if (this@TvVideoViewModel.nextVideoId == null) {
-                        viewModelScope.launch {
-                            SeriesDiscovery(api).discover(details, videoId, null, true)
-                                ?.let { result ->
-                                    _state.update {
-                                        it.copy(
-                                            seriesEpisodes = result.seriesEpisodes,
-                                            seriesSeasons = result.seriesSeasons,
-                                            selectedSeriesSeason = result.selectedSeriesSeason,
-                                            nextVideoId = result.nextVideoId ?: it.nextVideoId,
-                                        )
-                                    }
+                    // Discover the series episodes row (and next episode) on every
+                    // load, like mobile — a navigation-provided next still wins via
+                    // the `?: it.nextVideoId` fallback.
+                    viewModelScope.launch {
+                        SeriesDiscovery(api).discover(details, videoId, nextVideoId)
+                            ?.let { result ->
+                                _state.update {
+                                    it.copy(
+                                        seriesEpisodes = result.seriesEpisodes,
+                                        seriesSeasons = result.seriesSeasons,
+                                        selectedSeriesSeason = result.selectedSeriesSeason,
+                                        nextVideoId = result.nextVideoId ?: it.nextVideoId,
+                                    )
                                 }
-                        }
+                            }
                     }
                 }
                 .onFailure { e ->
