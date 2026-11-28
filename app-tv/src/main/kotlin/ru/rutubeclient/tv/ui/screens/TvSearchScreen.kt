@@ -15,9 +15,19 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -97,8 +107,32 @@ fun TvSearchScreen(
     onVideoClick: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val searchFieldFocus = remember { FocusRequester() }
+    val firstResultFocus = remember { FocusRequester() }
 
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
+    LaunchedEffect(state.results) {
+        if (state.results.isNotEmpty()) {
+            kotlinx.coroutines.delay(150)
+            runCatching { firstResultFocus.requestFocus() }
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown &&
+                    event.key == Key.DirectionDown &&
+                    state.results.isNotEmpty()
+                ) {
+                    runCatching { firstResultFocus.requestFocus() }
+                    true
+                } else {
+                    false
+                }
+            }
+    ) {
         androidx.tv.material3.Text(
             "Поиск",
             style = androidx.tv.material3.MaterialTheme.typography.headlineSmall,
@@ -107,7 +141,9 @@ fun TvSearchScreen(
         androidx.compose.material3.OutlinedTextField(
             value = state.query,
             onValueChange = viewModel::onQueryChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .focusRequester(searchFieldFocus),
             placeholder = { androidx.compose.material3.Text("Поиск видео…") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -127,10 +163,23 @@ fun TvSearchScreen(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
                 contentPadding = PaddingValues(bottom = 24.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                            runCatching { searchFieldFocus.requestFocus() }
+                            true
+                        } else {
+                            false
+                        }
+                    },
             ) {
-                gridItemsIndexed(state.results, key = { index, video -> "${video.id}_$index" }) { _, video ->
-                    TvVideoCard(video = video, onClick = { onVideoClick(video.id) })
+                gridItemsIndexed(state.results, key = { index, video -> "${video.id}_$index" }) { index, video ->
+                    TvVideoCard(
+                        video = video,
+                        onClick = { onVideoClick(video.id) },
+                        modifier = if (index == 0) Modifier.focusRequester(firstResultFocus) else Modifier,
+                    )
                 }
             }
 
